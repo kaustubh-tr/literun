@@ -234,6 +234,7 @@ class Agent:
                         response_id=response.id,
                         process_status=ProcessStatus.STARTED,
                         stream_status=StreamStatus.IDLE,
+                        raw_event=event,
                     )
                     
                 elif event.type == "response.output_item.added":
@@ -255,6 +256,7 @@ class Agent:
                             call_id=item.call_id,
                             process_status=ProcessStatus.IN_PROGRESS,
                             stream_status=StreamStatus.STARTED,
+                            raw_event=event,
                         )
                     
                     # Message stream created
@@ -266,6 +268,7 @@ class Agent:
                             item_id=item.id,
                             process_status=ProcessStatus.IN_PROGRESS,
                             stream_status=StreamStatus.STARTED,
+                            raw_event=event,
                         )
 
                 # Tool arguments streaming
@@ -284,6 +287,7 @@ class Agent:
                                 arguments=event.delta,
                                 process_status=ProcessStatus.IN_PROGRESS,
                                 stream_status=StreamStatus.STREAMING,
+                                raw_event=event,
                             )
                         
                 # Tool arguments completed
@@ -302,6 +306,7 @@ class Agent:
                                 arguments=event.arguments,
                                 process_status=ProcessStatus.IN_PROGRESS,
                                 stream_status=StreamStatus.COMPLETED,
+                                raw_event=event,
                             )
                         
                 # Text streaming
@@ -314,6 +319,7 @@ class Agent:
                         text=event.delta,
                         process_status=ProcessStatus.IN_PROGRESS,
                         stream_status=StreamStatus.STREAMING,
+                        raw_event=event,
                     )
                 
                 # Text completed
@@ -326,6 +332,7 @@ class Agent:
                         text=event.text,
                         process_status=ProcessStatus.IN_PROGRESS,
                         stream_status=StreamStatus.COMPLETED,
+                        raw_event=event,
                     )
                         
                 # Response completed successfully
@@ -337,9 +344,9 @@ class Agent:
                         sequence_number=event.sequence_number,
                         response_id=response.id,
                         usage=response.usage,
-                        raw_event=event,
                         process_status=ProcessStatus.COMPLETED,
                         stream_status=StreamStatus.COMPLETED,
+                        raw_event=event,
                     )
                 
                 # Response incomplete
@@ -353,6 +360,7 @@ class Agent:
                         error=response.incomplete_details,  # {'reason': ...}
                         process_status=ProcessStatus.IN_PROGRESS,
                         stream_status=StreamStatus.INCOMPLETE,
+                        raw_event=event,
                     )
                     return
                 
@@ -366,6 +374,7 @@ class Agent:
                         error=response.error,  # {'code': ..., 'message': ...}
                         process_status=ProcessStatus.FAILED,
                         stream_status=StreamStatus.FAILED,
+                        raw_event=event,
                     )
                     return
                 
@@ -378,6 +387,7 @@ class Agent:
                         error={"code": event.code, "message": event.message},  # {'code': ..., 'message': ...}
                         process_status=ProcessStatus.FAILED,
                         stream_status=StreamStatus.FAILED,
+                        raw_event=event,
                     )
                     return
             
