@@ -65,7 +65,7 @@ class TestAgent(unittest.TestCase):
 
     def test_stream_with_tool_call(self):
         """Test streaming with tool calls"""
-        from src.openai_agent.constants import StreamEventType, EventPhase, ProcessStatus, StreamStatus
+        from src.openai_agent.constants import StreamEventType, EventPhase, ProcessStatus
         
         # Setup tool
         def get_info(topic: str) -> str:
