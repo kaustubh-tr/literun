@@ -108,7 +108,11 @@ class ChatOpenAI:
         if current_tools:
             params["tools"] = current_tools
             params["tool_choice"] = tool_choice or self._tool_choice
-            params["parallel_tool_calls"] = parallel_tool_calls or self._parallel_tool_calls
+            params["parallel_tool_calls"] = (
+                parallel_tool_calls
+                if parallel_tool_calls is not None
+                else self._parallel_tool_calls
+            )
             
         return self.client.responses.create(**params)
         
@@ -124,8 +128,7 @@ class ChatOpenAI:
         output_text = extract_output_text(response)
         tool_calls = extract_tool_calls(response)
         usage_dict = extract_usage_dict(response)
-        
-        
+
         return Response(
             output=output_text,
             tool_calls=tool_calls,
@@ -158,6 +161,23 @@ class ChatOpenAI:
                     phase=EventPhase.NONE,
                     raw_event=event,
                 )
+
+            # Tool call created
+            if event.type == "response.output_item.added":
+                item = event.item
+                if item.type == "function_call":
+                    tool_calls[item.id] = {
+                        "call_id": item.call_id,
+                        "name": item.name,
+                        "arguments": "",
+                    }
+                    yield ResponseStreamEvent(
+                        type=StreamEventType.TOOL_CALL,
+                        phase=EventPhase.NONE,
+                        tool_name=item.name,
+                        call_id=item.call_id,
+                        raw_event=event,
+                    )
 
             # Tool arguments streaming
             elif event.type == "response.function_call_arguments.delta":
