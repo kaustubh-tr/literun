@@ -1,13 +1,30 @@
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
-from .constants import StreamEventType, EventPhase, ProcessStatus, StreamStatus
+from .constants import StreamEventType, EventPhase, RunStatus, StreamStatus
 
 
 @dataclass(frozen=True)
-class StreamEvent:
+class Response:
+    """
+    Final result returned by OpenAI Agent.
+    Used in Agent.invoke() method.
+    """
+    output: Optional[str] = None
+    tool_calls: Optional[Dict[str, Dict[str, Any]]] = None
+    usage: Optional[Any] = None
+    status: Optional[str] = None
+    raw_response: Optional[Any] = None
+
+
+@dataclass(frozen=True)
+class ResponseStreamEvent:
+    """
+    Represents a streaming event from the OpenAI Agent.
+    Used in Agent.stream() method.
+    """
     # Classification
     type: StreamEventType
-    phase: EventPhase
+    phase: Optional[EventPhase] = None
     
     # Ordering
     sequence_number: Optional[int] = None
@@ -24,7 +41,7 @@ class StreamEvent:
     usage: Optional[dict] = None
     
     # Lifecycle
-    process_status: Optional[ProcessStatus] = None
+    run_status: Optional[RunStatus] = None
     stream_status: Optional[StreamStatus] = None
     
     # Errors / raw passthrough
