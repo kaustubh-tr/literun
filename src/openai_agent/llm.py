@@ -120,15 +120,31 @@ class ChatOpenAI:
             
         return self.client.responses.create(**params)
         
-    def invoke(self, messages: List[Dict[str, Any]]) -> Response:
+    def invoke(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None,
+        parallel_tool_calls: Optional[bool] = None,
+    ) -> Response:
         """
         Synchronously call the model.
         Args:
             messages: List of messages.
+            tools: Optional list of tool definitions (overrides instance tools).
+            tool_choice: Optional tool choice strategy (overrides instance setting).
+            parallel_tool_calls: Optional parallel tool calls setting (overrides instance setting).
         Returns:
             Response: The OpenAI API response wrapped in Response.
         """
-        response = self._chat(messages=messages, stream=False)
+        response = self._chat(
+            messages=messages,
+            stream=False,
+            tools=tools,
+            tool_choice=tool_choice,
+            parallel_tool_calls=parallel_tool_calls,
+        )
         output_text = extract_output_text(response)
         tool_calls = extract_tool_calls(response)
         usage_dict = extract_usage_dict(response)
@@ -145,17 +161,29 @@ class ChatOpenAI:
         self,
         *,
         messages: List[Dict[str, Any]],
-        include_internal_events: bool = False
+        include_internal_events: bool = False,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None,
+        parallel_tool_calls: Optional[bool] = None,
     ) -> Generator[ResponseStreamEvent, None, None]:
         """
         Stream the model response.
         Args:
             messages: List of messages.
             include_internal_events: Whether to emit raw internal events.
+            tools: Optional list of tool definitions (overrides instance tools).
+            tool_choice: Optional tool choice strategy (overrides instance setting).
+            parallel_tool_calls: Optional parallel tool calls setting (overrides instance setting).
         Yields:
             ResponseStreamEvent: Streaming events.
         """
-        response_stream = self._chat(messages=messages, stream=True)
+        response_stream = self._chat(
+            messages=messages,
+            stream=True,
+            tools=tools,
+            tool_choice=tool_choice,
+            parallel_tool_calls=parallel_tool_calls,
+        )
         tool_calls: Dict[str, Dict[str, Any]] = {}
 
         for event in response_stream:
