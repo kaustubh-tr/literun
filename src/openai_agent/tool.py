@@ -1,5 +1,19 @@
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable, get_type_hints
+import inspect
 from .args_schema import ArgsSchema
+
+
+class ToolRuntime:
+    """
+    Base class for runtime context.
+    Attributes match the keys of the context dictionary passed to the agent.
+    """
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+    
+    def __repr__(self):
+        return f"ToolRuntime({self.__dict__})"
 
 
 class Tool:
@@ -59,7 +73,7 @@ class Tool:
             **({"strict": self.strict} if self.strict is not None else {}),
         }
 
-    # Runtime argument handling
+    # LLM Runtime argument handling
     def resolve_arguments(self, raw_args: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate and cast arguments from the model.
@@ -72,3 +86,31 @@ class Tool:
         for arg in self.args_schema:
             parsed[arg.name] = arg.validate_and_cast(raw_args.get(arg.name))
         return parsed
+
+    def execute(self, args: Dict[str, Any], runtime_context: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        Execute the tool with the given arguments and runtime context.
+        """
+        # 1. Resolve LLM arguments using the tool's schema logic
+        final_args = self.resolve_arguments(args)
+        
+        # 2. Inject ToolRuntime if requested by the function signature
+        # Use get_type_hints to properly resolve annotations, including forward references
+        try:
+            type_hints = get_type_hints(self.func)
+        except (NameError, AttributeError, TypeError):
+            # Fallback to inspect.signature if get_type_hints fails
+            # This handles cases where annotations can't be resolved
+            sig = inspect.signature(self.func)
+            type_hints = {
+                name: param.annotation 
+                for name, param in sig.parameters.items()
+                if param.annotation != inspect.Parameter.empty
+            }
+        
+        for param_name, param_type in type_hints.items():
+            if param_type is ToolRuntime:
+                final_args[param_name] = ToolRuntime(**(runtime_context or {}))
+
+        return self.func(**final_args)
+    

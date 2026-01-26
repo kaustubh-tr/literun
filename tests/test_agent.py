@@ -12,6 +12,26 @@ from src.openai_agent.output_schema import Response
 # Check if API key is set
 SKIP_REAL_API_TESTS = os.getenv("OPENAI_API_KEY") is None
 
+# Tests that don't require API key
+class TestAgentConstructor(unittest.TestCase):
+    """Tests for agent initialization and tool registration that don't require API calls"""
+    
+    def test_tools_constructor(self):
+        tool = Tool(
+            func=lambda: None,
+            name="test_tool",
+            description="desc",
+            args_schema=[],
+        )
+        llm = ChatOpenAI(model="gpt-4o", api_key="fake-api-key")
+        agent = Agent(llm=llm, tools=[tool])
+        self.assertIn("test_tool", agent.tools)
+        
+        # Test duplicate registration
+        with self.assertRaises(ValueError):
+            # Try to initialize with duplicate tools in list
+            Agent(llm=llm, tools=[tool, tool])
+
 @unittest.skipIf(SKIP_REAL_API_TESTS, "OPENAI_API_KEY not set")
 class TestAgent(unittest.TestCase):
     def test_initialization(self):
@@ -20,22 +40,6 @@ class TestAgent(unittest.TestCase):
         self.assertEqual(agent.llm.model, "gpt-4o")
         self.assertEqual(agent.system_prompt, "Test system prompt")
         self.assertEqual(agent.tools, {})
-
-    def test_add_tool(self):
-        llm = ChatOpenAI(model="gpt-4o")
-        agent = Agent(llm=llm)
-        tool = Tool(
-            func=lambda: None,
-            name="test_tool",
-            description="desc",
-            args_schema=[],
-        )
-        agent.add_tool(tool)
-        self.assertIn("test_tool", agent.tools)
-        
-        # Test duplicate registration
-        with self.assertRaises(ValueError):
-            agent.add_tool(tool)
 
     def test_invoke_simple_response(self):
         llm = ChatOpenAI(model="gpt-4o")
@@ -57,8 +61,11 @@ class TestAgent(unittest.TestCase):
         )
         
         llm = ChatOpenAI(model="gpt-4o")
-        agent = Agent(llm=llm, system_prompt="You are a helpful assistant. Use the echo tool when asked.")
-        agent.add_tool(tool)
+        agent = Agent(
+            llm=llm, 
+            system_prompt="You are a helpful assistant. Use the echo tool when asked.",
+            tools=[tool]
+        )
 
         response = agent.invoke(user_input="Please use the echo tool to say 'hello'")
         self.assertIn("Echo: hello", response.output)
@@ -90,8 +97,11 @@ class TestAgent(unittest.TestCase):
         )
         
         llm = ChatOpenAI(model="gpt-4o")
-        agent = Agent(llm=llm, system_prompt="You are a helpful assistant. Use get_info tool when asked for information.")
-        agent.add_tool(tool)
+        agent = Agent(
+            llm=llm, 
+            system_prompt="You are a helpful assistant. Use get_info tool when asked for information.",
+            tools=[tool]
+        )
         
         # Track events
         tool_call_events = []

@@ -72,7 +72,7 @@ class ChatOpenAI:
         self._parallel_tool_calls = parallel_tool_calls
         return self
 
-    def _chat(
+    def chat(
         self,
         *,
         messages: List[Dict[str, Any]],
@@ -124,7 +124,7 @@ class ChatOpenAI:
         Returns:
             Response: The OpenAI API response wrapped in Response.
         """
-        response = self._chat(messages=messages, stream=False)
+        response = self.chat(messages=messages, stream=False)
         output_text = extract_output_text(response)
         tool_calls = extract_tool_calls(response)
         usage_dict = extract_usage_dict(response)
@@ -151,7 +151,7 @@ class ChatOpenAI:
         Yields:
             ResponseStreamEvent: Streaming events.
         """
-        response_stream = self._chat(messages=messages, stream=True)
+        response_stream = self.chat(messages=messages, stream=True)
         tool_calls: Dict[str, Dict[str, Any]] = {}
 
         for event in response_stream:

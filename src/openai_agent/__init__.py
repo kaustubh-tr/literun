@@ -1,6 +1,6 @@
 from .agent import Agent
 from .llm import ChatOpenAI
-from .tool import Tool
+from .tool import Tool, ToolRuntime
 from .prompt_template import PromptTemplate
 from .prompt_message import PromptMessage
 from .args_schema import ArgsSchema
@@ -11,6 +11,7 @@ __all__ = [
     "Agent", 
     "ChatOpenAI",
     "Tool", 
+    "ToolRuntime",
     "PromptTemplate", "PromptMessage", 
     "ArgsSchema", 
     "Role", 
