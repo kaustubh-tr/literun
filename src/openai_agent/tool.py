@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Callable, get_type_hints
+import inspect
 from .args_schema import ArgsSchema
 
 
@@ -95,8 +96,6 @@ class Tool:
         
         # 2. Inject ToolRuntime if requested by the function signature
         # Use get_type_hints to properly resolve annotations, including forward references
-        import inspect
-        
         try:
             type_hints = get_type_hints(self.func)
         except (NameError, AttributeError, TypeError):
