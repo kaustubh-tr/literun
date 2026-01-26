@@ -1,5 +1,5 @@
-from typing import Any, Dict, Optional, Generator
 import json
+from typing import Any, Dict, Iterable, Optional, Generator, List
 from .tool import Tool
 from .llm import ChatOpenAI
 from .prompt_template import PromptTemplate
@@ -17,6 +17,7 @@ class Agent:
         *,
         llm: ChatOpenAI,
         system_prompt: Optional[str] = None,
+        tools: Optional[List[Tool]] = None,
         tool_choice: str = "auto", # "auto", "none", "required"
         parallel_tool_calls: bool = True,
         max_iterations: int = 10,
@@ -26,6 +27,7 @@ class Agent:
         Args:
             llm (ChatOpenAI): The OpenAI language model instance to use.
             system_prompt (Optional[str]): The system instructions for the agent.
+            tools (Optional[list[Tool]]): An optional list of Tool instances to register.
             tool_choice (str): Tool choice strategy: "auto", "none", "required".
             parallel_tool_calls (bool): Whether to call tools in parallel.
             max_iterations (int): Maximum number of agent loop iterations. Defaults to 10.
@@ -35,12 +37,35 @@ class Agent:
         self.tool_choice = tool_choice
         self.parallel_tool_calls = parallel_tool_calls
         self.max_iterations = max_iterations
-        self.tools: Dict[str, Tool] = {}
-
+        self.tools: Dict[str, Tool] = self.add_tools(tools)
+    
     # Tool registration
+    def add_tools(
+        self,
+        tools: Optional[Iterable[Tool]],
+    ) -> Dict[str, Tool]:
+        """
+        Initialize a tool registry from a list of tools with the agent.
+        Args:
+            tools (Optional[Iterable[Tool]]): An optional list of Tool instances to register.
+        Returns:
+            Dict[str, Tool]: A mapping from tool names to Tool instances.
+        Raises:
+            ValueError: If there are duplicate tool names.
+        """
+        tool_map: Dict[str, Tool] = {}
+        for tool in tools or []:
+            if tool.name in tool_map:
+                raise ValueError(f"Duplicate tool name: {tool.name}")
+            tool_map[tool.name] = tool
+        return tool_map
+
     def add_tool(self, tool: Tool) -> None:
         """
-        Register a tool with the agent.
+        Add a single tool at runtime.
+
+        This method MUTATES agent state.
+        Intended for advanced / dynamic use cases.
         Args:
             tool (Tool): The tool instance to register.
         Raises:
@@ -59,31 +84,38 @@ class Agent:
         return [tool.to_openai_tool() for tool in self.tools.values()]
 
     # Tool execution
-    def _execute_tool(self, name: str, args: Dict[str, Any]) -> Any:
+    def _execute_tool(
+        self, 
+        name: str, 
+        args: Dict[str, Any], 
+        runtime_context: Optional[Dict[str, Any]] = None
+    ) -> Any:
         """
         Execute a registered tool.
         Args:
             name (str): The name of the tool to execute.
             args (Dict[str, Any]): The arguments for the tool.
+            runtime_context (Optional[Dict[str, Any]]): Runtime context to pass strictly to valid args.
         Returns:
             Any: The result of the tool execution.
         Raises:
-            ValueError: If the tool is not found.
+            ValueError: If the tool is not found, or if required runtime arguments are missing.
         """
         tool = self.tools.get(name)
         if not tool:
             raise ValueError(f"Tool '{name}' not found")
-        final_args = tool.resolve_arguments(args)
-        return tool.func(**final_args)
+        
+        return tool.execute(args, runtime_context)
+
     
-    # Initial message construction
-    def _build_initial_prompt(
+    # Message construction
+    def _build_prompt(
         self, 
         user_input: str, 
         prompt_template: Optional[PromptTemplate] = None
     ) -> PromptTemplate:
         """
-        Construct the initial conversation state.
+        Construct the conversation state.
         Args:
             user_input (str): The user's input text.
             prompt_template (Optional[PromptTemplate]): A template to initialize history.
@@ -107,13 +139,15 @@ class Agent:
         self,
         *,
         user_input: str,
-        prompt_template: Optional[PromptTemplate] = None
+        prompt_template: Optional[PromptTemplate] = None,
+        runtime_context: Optional[Dict[str, Any]] = None,
     ) -> Response:
         """
         Run the agent synchronously.
         Args:
             user_input (str): The user's input text.
             prompt_template (Optional[PromptTemplate]): Optional template for history.
+            runtime_context (Optional[Dict[str, Any]]): Runtime context to be passed to tools.
         Returns:
             str: The final text response from the agent.
         Raises:
@@ -122,10 +156,10 @@ class Agent:
         """
         if not user_input:
             raise ValueError("user_input cannot be empty")
-        prompt = self._build_initial_prompt(user_input, prompt_template)
+        prompt = self._build_prompt(user_input, prompt_template)
 
         for _ in range(self.max_iterations):
-            response = self.llm._chat(
+            response = self.llm.chat(
                 messages=prompt.to_openai_input(),
                 stream=False,
                 tools=self._convert_to_openai_tools() if self.tools else None,
@@ -154,7 +188,7 @@ class Agent:
                         call_id=tool.call_id,
                     )
                     args = json.loads(tool.arguments)
-                    result = self._execute_tool(tool.name, args)
+                    result = self._execute_tool(tool.name, args, runtime_context)
                     
                     prompt.tool_output(
                         call_id=tool.call_id,
@@ -182,6 +216,7 @@ class Agent:
         user_input: str,
         prompt_template: Optional[PromptTemplate] = None,
         include_internal_events: bool = False,
+        runtime_context: Optional[Dict[str, Any]] = None,
     ) -> Generator[ResponseStreamEvent, None, None]:
         """
         Run the agent with streaming responses.
@@ -189,6 +224,7 @@ class Agent:
             user_input (str): The user's input text.
             prompt_template (Optional[PromptTemplate]): Optional template for history.
             include_internal_events (bool): Whether to emit raw internal events. Defaults to False.
+            runtime_context (Optional[Dict[str, Any]]): Runtime context to be passed to tools.
         Yields:
             ResponseStreamEvent: Events representing the agent's progress and output.
         Raises:
@@ -197,10 +233,10 @@ class Agent:
         """
         if not user_input:
             raise ValueError("user_input cannot be empty")
-        prompt = self._build_initial_prompt(user_input, prompt_template)
+        prompt = self._build_prompt(user_input, prompt_template)
         
         for _ in range(self.max_iterations):
-            response_stream = self.llm._chat(
+            response_stream = self.llm.chat(
                 messages=prompt.to_openai_input(),
                 stream=True,
                 tools=self._convert_to_openai_tools() if self.tools else None,
@@ -395,6 +431,7 @@ class Agent:
                 result = self._execute_tool(
                     tool["name"],
                     json.loads(tool["arguments"]),
+                    runtime_context,
                 )
                 prompt.tool_output(
                     call_id=tool["call_id"],
