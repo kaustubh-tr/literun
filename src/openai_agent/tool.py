@@ -103,8 +103,8 @@ class Tool:
             # This handles cases where annotations can't be resolved
             sig = inspect.signature(self.func)
             type_hints = {
-                param_name: param.annotation 
-                for param_name, param in sig.parameters.items()
+                name: param.annotation 
+                for name, param in sig.parameters.items()
                 if param.annotation != inspect.Parameter.empty
             }
         
