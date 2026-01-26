@@ -130,7 +130,13 @@ tool = Tool(
     name="get_user_data",
     description="Get user info",
     func=get_user_data,
-    args_schema=[ArgsSchema("user_id", str, "ID of the user")]
+    args_schema=[
+        ArgsSchema(
+            name="user_id",
+            type=str,
+            description="ID of the user",
+        )
+    ]
 )
 
 agent = Agent(

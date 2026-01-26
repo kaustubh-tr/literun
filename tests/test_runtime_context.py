@@ -1,7 +1,5 @@
 import unittest
-from src.openai_agent import Agent, ChatOpenAI, Tool, ArgsSchema, Response
-from src.openai_agent.tool import ToolRuntime
-from typing import Any, Dict
+from src.openai_agent import Agent, ChatOpenAI, Tool, ArgsSchema, ToolRuntime
 
 class TestRuntimeContext(unittest.TestCase):
     def test_invoke_with_context(self):

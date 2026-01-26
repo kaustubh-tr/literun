@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable, get_type_hints
 from .args_schema import ArgsSchema
 
 
@@ -94,11 +94,15 @@ class Tool:
         final_args = self.resolve_arguments(args)
         
         # 2. Inject ToolRuntime if requested by the function signature
-        import inspect
-        sig = inspect.signature(self.func)
+        # Use get_type_hints to properly resolve annotations, including forward references
+        try:
+            type_hints = get_type_hints(self.func)
+        except Exception:
+            # Fallback to manual inspection if get_type_hints fails
+            type_hints = {}
         
-        for param_name, param in sig.parameters.items():
-            if param.annotation == ToolRuntime:
+        for param_name, param_type in type_hints.items():
+            if param_type is ToolRuntime or param_type == ToolRuntime:
                 final_args[param_name] = ToolRuntime(**(runtime_context or {}))
 
         return self.func(**final_args)

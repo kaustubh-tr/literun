@@ -99,7 +99,7 @@ class Agent:
         Returns:
             Any: The result of the tool execution.
         Raises:
-            ValueError: If the tool is not found, or if required runtime arguments are missing.
+            ValueError: If the tool is not found.
         """
         tool = self.tools.get(name)
         if not tool:
@@ -149,7 +149,7 @@ class Agent:
             prompt_template (Optional[PromptTemplate]): Optional template for history.
             runtime_context (Optional[Dict[str, Any]]): Runtime context to be passed to tools.
         Returns:
-            str: The final text response from the agent.
+            Response: The final response containing the agent's output text and metadata.
         Raises:
             ValueError: If user_input is empty.
             RuntimeError: If the agent exceeds max iterations or gets stuck.

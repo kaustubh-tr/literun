@@ -12,6 +12,26 @@ from src.openai_agent.output_schema import Response
 # Check if API key is set
 SKIP_REAL_API_TESTS = os.getenv("OPENAI_API_KEY") is None
 
+# Tests that don't require API key
+class TestAgentConstructor(unittest.TestCase):
+    """Tests for agent initialization and tool registration that don't require API calls"""
+    
+    def test_tools_constructor(self):
+        tool = Tool(
+            func=lambda: None,
+            name="test_tool",
+            description="desc",
+            args_schema=[],
+        )
+        llm = ChatOpenAI(model="gpt-4o", api_key="fake-api-key")
+        agent = Agent(llm=llm, tools=[tool])
+        self.assertIn("test_tool", agent.tools)
+        
+        # Test duplicate registration
+        with self.assertRaises(ValueError):
+             # Try to initialize with duplicate tools in list
+             Agent(llm=llm, tools=[tool, tool])
+
 @unittest.skipIf(SKIP_REAL_API_TESTS, "OPENAI_API_KEY not set")
 class TestAgent(unittest.TestCase):
     def test_initialization(self):
@@ -20,22 +40,6 @@ class TestAgent(unittest.TestCase):
         self.assertEqual(agent.llm.model, "gpt-4o")
         self.assertEqual(agent.system_prompt, "Test system prompt")
         self.assertEqual(agent.tools, {})
-
-    def test_tools_constructor(self):
-        tool = Tool(
-            func=lambda: None,
-            name="test_tool",
-            description="desc",
-            args_schema=[],
-        )
-        llm = ChatOpenAI(model="gpt-4o")
-        agent = Agent(llm=llm, tools=[tool])
-        self.assertIn("test_tool", agent.tools)
-        
-        # Test duplicate registration
-        with self.assertRaises(ValueError):
-             # Try to initialize with duplicate tools in list
-             Agent(llm=llm, tools=[tool, tool])
 
     def test_invoke_simple_response(self):
         llm = ChatOpenAI(model="gpt-4o")

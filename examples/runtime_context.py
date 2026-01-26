@@ -1,6 +1,4 @@
-from typing import Dict, Any
-from openai_agent import Agent, ChatOpenAI, Tool, ArgsSchema
-from openai_agent.tool import ToolRuntime
+from openai_agent import Agent, ChatOpenAI, Tool, ArgsSchema, ToolRuntime
 
 # 1. Define a function that uses BOTH an LLM argument and the new ToolRuntime
 # The 'user_id' comes from the LLM.
