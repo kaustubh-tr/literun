@@ -3,7 +3,7 @@ requires = ["setuptools>=80.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openai_agent"
+name = "literun"
 version = "0.1.0"
 description = "A Minimal agent runtime built on OpenAI Responses API"
 readme = "README.md"
