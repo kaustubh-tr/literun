@@ -52,8 +52,8 @@ def main():
         for result in agent.stream(
             user_input="What is the weather in Tokyo? Tell me a short story about it."
         ):
-            # print(event)  # for complete list of events for this agent run
             event = result.event
+            # print(event)  # for complete list of events for this agent run
             if getattr(event, "type", None) == "response.output_text.delta":
                 delta_text = getattr(event, "delta", "")
                 if isinstance(delta_text, str):
