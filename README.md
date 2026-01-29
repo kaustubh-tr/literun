@@ -1,4 +1,4 @@
-# OpenAI Agent Framework
+# Literun 🚀
 
 A lightweight, flexible Python framework for building custom OpenAI agents (Responses API) with tool support and structured prompt management.
 
@@ -9,6 +9,10 @@ A lightweight, flexible Python framework for building custom OpenAI agents (Resp
 - **Type Safety**: Strong typing for tool arguments with automatic coercion and validation.
 - **Prompt Templates**: Structured way to build system, user, and assistant messages.
 - **Constants**: Pre-defined constants for OpenAI roles and message types.
+- **Streaming Support**: Built-in support for real-time streaming of agent thoughts, tool calls, and responses.
+- **Tool Management**: Easy-to-define tools with automatic JSON schema generation (`ArgsSchema`).
+- **Event-Driven**: Structured event system for granular control over the agent's execution lifecycle.
+- **OpenAI Compatible**: Seamlessly integrates with `openai-python` client.
 
 ## Requirements
 
@@ -20,89 +24,81 @@ A lightweight, flexible Python framework for building custom OpenAI agents (Resp
 ### Production
 
 ```bash
-pip install openai-agent
+pip install literun
 ```
 
 ### Development
 
 ```bash
-git clone https://github.com/kaustubh-tr/openai-agent.git
+git clone https://github.com/kaustubh-tr/literun.git
 cd openai-agent
 pip install -e .[dev]
 ```
 
-## Usage
+## Quick Start
 
-### Basic Example (Synchronous)
+### Basic Agent
+
+Here is a simple example of how to create an agent with a custom tool:
 
 ```python
-from openai_agent import Agent, ChatOpenAI, Tool, ArgsSchema
+import os
+from literun import Agent, ChatOpenAI, Tool, ArgsSchema
 
-# 1. Define a function
-def get_weather(location: str) -> str:
-    return f"The weather in {location} is sunny."
+# 1. Define a tool function
+def get_weather(location: str, unit: str = "celsius") -> str:
+    return f"The weather in {location} is 25 degrees {unit}."
 
-# 2. Wrap it in a Tool
+# 2. Wrap it with Tool schema
 weather_tool = Tool(
-    name="get_weather",
-    description="Get weather info",
     func=get_weather,
-    args_schema=[ArgsSchema(name="location", type=str, description="City name")]
+    name="get_weather",
+    description="Get the weather for a location",
+    args_schema=[
+        ArgsSchema(
+            name="location",
+            type=str,
+            description="The city and state, e.g. San Francisco, CA",
+        ),
+        ArgsSchema(
+            name="unit",
+            type=str,
+            description="The unit of temperature",
+            enum=["celsius", "fahrenheit"],
+        ),
+    ],
 )
 
-# 3. Initialize LLM
+# 3. Initialize LLM and Agent
 llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
 
 # 4. Initialize Agent
 agent = Agent(
     llm=llm,
     system_prompt="You are a helpful assistant.",
-    tools=[weather_tool]
+    tools=[weather_tool],
 )
 
-# 5. Run
-# Returns a Response object
-response = agent.invoke(user_input="What's the weather in Paris?")
-print(response.output)
+# 5. Run the Agent
+result = agent.invoke(user_input="What is the weather in Tokyo?")
+print(f"Final Answer: {result.final_output}")
 ```
 
-### Streaming Example
+### Streaming Agent
 
-The agent supports streaming responses with event filtering.
+You can also stream the agent's execution to handle events in real-time:
 
 ```python
-from openai_agent import Agent, ChatOpenAI, Tool, ArgsSchema, StreamEventType, EventPhase
-
-# ... (Tool definition same as above) ...
-weather_tool = Tool(
-    name="get_weather",
-    description="Get weather info",
-    func=get_weather,
-    args_schema=[ArgsSchema(name="location", type=str, description="City name")]
-)
-
-llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
-
-agent = Agent(
-    llm=llm,
-    system_prompt="You are a helpful assistant.",
-    tools=[weather_tool]
-)
+# ... (setup tool and agent as above)
 
 print("Agent: ", end="", flush=True)
+for result in agent.stream(user_input="What is the weather in Tokyo?"):
+    event = result.event
+    if event.type == "response.output_text.delta":
+        print(event.delta, end="", flush=True)
+    elif event.type == "response.function_call_arguments.done":
+        print(f"\n[Tool Call: {event.name}]")
 
-# Stream returns a generator of ResponseStreamEvent objects
-# Set include_internal_events=True to receive all OpenAI API events in the `raw_event` attribute of each ResponseStreamEvent
-for event in agent.stream(user_input="What's the weather in Tokyo?", include_internal_events=False):
-    
-    # Handle text content updates
-    if event.type == StreamEventType.TEXT and event.phase == EventPhase.DELTA:
-        print(event.text, end="", flush=True)
-        
-    # Handle tool usage (optional)
-    elif event.type == StreamEventType.TOOL_CALL and event.phase == EventPhase.FINAL:
-        print(f"\n[Tool used: {event.tool_name}]", end="\nAgent: ", flush=True)
-        
 print()
 ```
 
@@ -117,38 +113,48 @@ Rules:
 
 ```python
 from typing import Dict, Any
-from openai_agent import Tool, ArgsSchema, ToolRuntime
+from literun import Tool, ArgsSchema, ToolRuntime
 
 # 1. Define tool with context
-def get_user_data(user_id: str, ctx: ToolRuntime) -> str:
-    db_conn = getattr(ctx, "db_conn", None)
-    return f"Fetching data for {user_id} using {db_conn}..."
+def get_weather(location: str, ctx: ToolRuntime) -> str:
+    """
+    Returns weather info for a location.
+    The runtime context can include sensitive info like user_id or API keys.
+    """
+    user_id = getattr(ctx, "user_id", "unknown_user")
+    api_key = getattr(ctx, "weather_api_key", None)
+
+    # Simulate fetching weather
+    return f"Weather for {location} fetched using API key '{api_key}' for user '{user_id}'."
 
 # 2. Register tool 
-# Only expose 'user_id' to the LLM
 tool = Tool(
-    name="get_user_data",
-    description="Get user info",
-    func=get_user_data,
+    name="get_weather",
+    description="Get the weather for a given location",
+    func=get_weather,
     args_schema=[
         ArgsSchema(
-            name="user_id",
+            name="location",
             type=str,
-            description="ID of the user",
+            description="Location for which to get the weather",
         )
     ]
 )
 
+# 3. Setup agent
 agent = Agent(
     llm=ChatOpenAI(api_key="fake"), 
     tools=[tool]
 )
 
-# 3. Pass config at runtime
+# 4. Pass config at runtime
 # The whole dict is passed into the 'ctx' argument
 agent.invoke(
-    user_input="Who is user 123?",
-    runtime_context={"db_conn": "ProductionDB"}
+    user_input="What's the weather in London?",
+    runtime_context={
+        "user_id": "user_123",
+        "weather_api_key": "SECRET_API_KEY_456"
+    }
 )
 ```
 
@@ -157,7 +163,7 @@ agent.invoke(
 You can also use the `ChatOpenAI` class directly if you don't need the agent loop (e.g., for simple, one-off LLM calls).
 
 ```python
-from openai_agent import ChatOpenAI
+from literun import ChatOpenAI
 
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
@@ -168,33 +174,35 @@ messages = [
 
 # Synchronous call
 # Returns a Response object containing output, usage, tool_calls etc.
-response = llm.invoke(messages)
-print(response.output)
+response = llm.invoke(messages=messages)
+print(response.final_output)
 
 # Or streaming call
 # Returns generator of ResponseStreamEvent
 stream = llm.stream(messages=messages)
 for event in stream:
-    # ... handle events ...
-    pass
+    print(event)
 ```
 
-## Key Classes
+See [examples](examples/) for complete runnable examples.
 
-### Response
-The unified output object for synchronous calls (`agent.invoke`, `llm.invoke`).
-- `output` (str): The text response.
-- `tool_calls` (List[Dict]): List of tool calls made.
-- `usage` (Dict): Token usage statistics.
+## Project Structure
 
-### ResponseStreamEvent
-The unified event object for streaming calls (`agent.stream`, `llm.stream`).
-- `type` (StreamEventType): The type of event (TEXT, TOOL_CALL, LIFECYCLE, ERROR).
-- `phase` (EventPhase): The phase of the event (DELTA, FINAL).
-- `text` (str): Text content (for text events).
-- `usage` (Dict): Usage stats (on lifecycle events).
+The project is organized as follows:
 
-See [examples/](examples/) for complete runnable examples.
+```
+literun/
+├── src/
+│   └── literun/          # Main package source
+│       ├── agent.py      # Agent runtime logic
+│       ├── llm.py        # LLM client wrapper
+│       ├── tool.py       # Tool definition and execution
+│       ├── events.py     # Stream event types
+│       └── ...
+├── tests/                # Unit tests
+├── examples/             # Usage examples
+└── pyproject.toml        # Project configuration
+```
 
 ## Testing
 
@@ -210,7 +218,8 @@ python -m unittest discover tests
 2. Create a feature branch
 3. Make your changes
 4. Run tests: `python -m unittest discover tests`
-5. Submit a pull request
+5. Update the example usage if needed
+6. Submit a pull request
 
 ## License
 
