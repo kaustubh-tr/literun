@@ -1,4 +1,4 @@
-# Literun 🚀
+# LiteRun 🚀
 
 A lightweight, flexible Python framework for building custom OpenAI agents (Responses API) with tool support and structured prompt management.
 
