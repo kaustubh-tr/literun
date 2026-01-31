@@ -61,7 +61,7 @@ class ChatOpenAI(BaseModel):
     store: bool = False
     model_kwargs: dict[str, Any] = Field(default_factory=dict)
 
-    _client: OpenAI | None = PrivateAttr(default=None)
+    _client: OpenAI = PrivateAttr()
     _tools: list[Tool] | None = PrivateAttr(default=None)
     _tool_choice: str | None = PrivateAttr(default=None)
     _parallel_tool_calls: bool | None = PrivateAttr(default=None)
@@ -76,7 +76,8 @@ class ChatOpenAI(BaseModel):
             import warnings
 
             warnings.warn(
-                "o-series models require temperature=1. Overriding provided temperature.",
+                "o-series models require temperature=1 and no temperature was provided. "
+                "Setting default temperature=1 for o-series models.",
                 UserWarning,
             )
             self.temperature = 1

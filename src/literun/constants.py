@@ -15,7 +15,7 @@ ContentType = Literal[
 ]
 
 ToolChoice = Literal["auto", "none", "required"]
-ReasoningEffort = Literal["low", "medium", "high"]
+ReasoningEffort = Literal["none", "low", "medium", "high"]
 Verbosity = Literal["low", "medium", "high"]
 TextFormat = Literal["text", "json_object", "json_schema"]
 

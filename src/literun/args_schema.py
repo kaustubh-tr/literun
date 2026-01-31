@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ArgsSchema(BaseModel):
@@ -15,6 +15,8 @@ class ArgsSchema(BaseModel):
         description: A description of the argument for documentation purposes.
         enum: Optional list of allowed values for the argument.
     """
+
+    model_config = ConfigDict(populate_by_name=True)
 
     name: str
     type_: type[Any] = Field(alias="type")
