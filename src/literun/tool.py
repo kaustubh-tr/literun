@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 from typing import Any, Callable, get_type_hints
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from .args_schema import ArgsSchema
 
@@ -21,9 +21,6 @@ class ToolRuntime(BaseModel):
     """
 
     model_config = ConfigDict(extra="allow")
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
 
 
 class Tool(BaseModel):

@@ -31,7 +31,7 @@ def get_weather(location: str, unit: str = "celsius") -> str:
 def search_database(query: str, limit: int, runtime: ToolRuntime) -> str:
     """Search the customer database for records matching the query.
     
-    This tool demonstrates Runtime Context'. The `request_id` and `user_id` are not provided
+    This tool demonstrates Runtime Context. The `request_id` and `user_id` are not provided
     by the LLM, but injected by the application at runtime.
     
     Args:

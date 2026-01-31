@@ -33,7 +33,7 @@ class PromptMessage(BaseModel):
     arguments: str | None = None
     call_id: str | None = None
     output: str | None = None
-    content_type: ContentType | None = None
+    content_type: ContentType
 
     @model_validator(mode="after")
     def _validate_invariants(self) -> PromptMessage:
