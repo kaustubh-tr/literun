@@ -1,34 +1,40 @@
 [build-system]
-requires = ["setuptools>=80.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "literun"
 version = "0.1.0"
 description = "A Minimal agent runtime built on OpenAI Responses API"
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "MIT" }
-
+requires-python = ">=3.10.0,<4.0.0"
+license = { file = "LICENSE" }
 authors = [
-    { name = "Kaustubh", email = "trivedikaustubh01@gmail.com" }
+    { name = "Kaustubh Trivedi", email = "trivedikaustubh01@gmail.com" }
 ]
 
-# runtime dependencies
 dependencies = [
-    "openai>=2.11.0",
+    "openai>=2.11.0,<3.0.0",
+    "pydantic>=2.12.0,<3.0.0",
 ]
 
-# optional dev dependencies
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "black",
-    "flake8"
+    "pytest>=9.0.0,<10.0.0",
 ]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[project.urls]
+Homepage = "https://github.com/kaustubh-tr/literun"
+Source = "https://github.com/kaustubh-tr/literun"
+Issues = "https://github.com/kaustubh-tr/literun/issues"
+Readme = "https://github.com/kaustubh-tr/literun#readme"
+Documentation = "https://github.com/kaustubh-tr/literun/blob/main/DOCS.md"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/literun"]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
