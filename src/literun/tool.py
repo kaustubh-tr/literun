@@ -3,71 +3,57 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Dict, List, Optional, Callable, get_type_hints
+from typing import Any, Callable, get_type_hints
+from pydantic import BaseModel, ConfigDict
 
 from .args_schema import ArgsSchema
 
 
-class ToolRuntime:
+class ToolRuntime(BaseModel):
     """Runtime context container for tools.
 
-    This class stores arbitrary runtime values as attributes, using keyword
-    arguments provided at initialization. It is typically injected into tool
-    functions that declare a parameter annotated with ``ToolRuntime``.
+    This class corresponds to arbitrary runtime values passed via `runtime_context`
+    in `Agent.invoke()`. It allows extra arguments on initialization.
 
     Args:
         **kwargs: Arbitrary keyword arguments that will be set as attributes
             on the instance.
     """
 
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-    def __repr__(self):
-        return f"ToolRuntime({self.__dict__})"
+    model_config = ConfigDict(extra="allow")
 
 
-class Tool:
+class Tool(BaseModel):
     """Represents a callable tool that can be invoked by an agent or LLM.
 
     A ``Tool`` wraps a Python callable along with metadata and an argument
     schema, and provides utilities for argument validation, execution,
     and conversion to the OpenAI tool definition format.
+
+    Args:
+        func: The function to execute when the tool is called.
+        name: The name of the tool.
+        description: A description of what the tool does.
+        args_schema: A list of arguments the tool accepts.
+        strict: If True, model output is guaranteed to exactly match the JSON Schema
+            provided in the function definition. If None, `strict` argument will not
+            be included in tool definition.
     """
 
-    def __init__(
-        self,
-        *,
-        func: Callable,
-        name: str,
-        description: str,
-        args_schema: List[ArgsSchema],
-        strict: Optional[bool] = None,
-    ):
-        """Initialize a Tool.
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-        Args:
-            func: The function to execute when the tool is called.
-            name: The name of the tool.
-            description: A description of what the tool does.
-            args_schema: A list of arguments the tool accepts.
-            strict: If True, model output is guaranteed to exactly match the JSON Schema
-                provided in the function definition. If None, `strict` argument will not
-                be included in tool definition.
-        """
-        self.func = func
-        self.name = name
-        self.description = description
-        self.args_schema = args_schema
-        self.strict = strict
+    func: Callable
+    name: str
+    description: str
+    args_schema: list[ArgsSchema]
+    strict: bool | None = None
 
     # OpenAI schema
-    def to_openai_tool(self) -> Dict[str, Any]:
+    def to_openai_tool(self) -> dict[str, Any]:
         """Convert the tool to the OpenAI tool schema format.
 
         Returns:
-            Dict[str, Any]: The OpenAI-compatible tool definition.
+            dict[str, Any]: The OpenAI-compatible tool definition.
         """
         properties = {}
         required = []
@@ -90,14 +76,14 @@ class Tool:
         }
 
     # LLM Runtime argument handling
-    def resolve_arguments(self, raw_args: Dict[str, Any]) -> Dict[str, Any]:
+    def resolve_arguments(self, raw_args: dict[str, Any]) -> dict[str, Any]:
         """Validate and cast raw arguments provided by the model.
 
         Args:
             raw_args: The raw argument dictionary produced by the model.
 
         Returns:
-            Dict[str, Any]: A dictionary of validated and type-cast arguments.
+            dict[str, Any]: A dictionary of validated and type-cast arguments.
         """
         parsed = {}
         for arg in self.args_schema:
@@ -105,7 +91,9 @@ class Tool:
         return parsed
 
     def execute(
-        self, args: Dict[str, Any], runtime_context: Optional[Dict[str, Any]] = None
+        self,
+        args: dict[str, Any],
+        runtime_context: dict[str, Any] | None = None,
     ) -> Any:
         """Execute the tool with validated arguments and runtime context.
 

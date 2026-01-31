@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel
 from typing import Any
 
 from openai.types.responses import Response
@@ -10,8 +10,7 @@ from .items import RunItem
 from .events import StreamEvent
 
 
-@dataclass
-class RunResult:
+class RunResult(BaseModel):
     """Final result returned by the OpenAI Agent.
 
     Used in the ``Agent.invoke()`` method. Contains the full execution
@@ -30,8 +29,7 @@ class RunResult:
     """The output produced by the final agent invocation."""
 
 
-@dataclass
-class RunResultStreaming:
+class RunResultStreaming(BaseModel):
     """Streaming result returned by the OpenAI Agent.
 
     Used in the ``Agent.stream()`` method. Each instance represents a

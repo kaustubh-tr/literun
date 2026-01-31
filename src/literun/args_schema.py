@@ -2,39 +2,33 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Type, Dict
+from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class ArgsSchema:
-    """Represents an argument for a tool."""
+class ArgsSchema(BaseModel):
+    """Represents an argument for a tool.
 
-    def __init__(
-        self,
-        *,
-        name: str,
-        type: Type,
-        description: str,
-        enum: Optional[List[Any]] = None,
-    ):
-        """Initialize an ArgsSchema.
+    Args:
+        name: The name of the argument.
+        type: The Python type of the argument (e.g., str, int, float, bool).
+        description: A description of the argument for documentation purposes.
+        enum: Optional list of allowed values for the argument.
+    """
 
-        Args:
-            name: The name of the argument.
-            type: The Python type of the argument (e.g., str, int, float, bool).
-            description: A description of the argument for documentation purposes.
-            enum: Optional list of allowed values for the argument.
-        """
-        self.name = name
-        self.type_ = type
-        self.description = description
-        self.enum = enum
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    type_: type[Any] = Field(alias="type")
+    description: str = ""
+    enum: list[Any] | None = None
 
     # JSON schema representation
-    def to_json_schema(self) -> Dict[str, Any]:
+    def to_json_schema(self) -> dict[str, Any]:
         """Convert the argument to a JSON Schema representation.
 
         Returns:
-            Dict[str, Any]: A dictionary representing the argument in JSON Schema format.
+            dict[str, Any]: A dictionary representing the argument in JSON Schema format.
         """
         schema = {
             "type": self._json_type(),

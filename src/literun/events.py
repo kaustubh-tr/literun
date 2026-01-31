@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Union, Literal, TypeAlias
+from typing import Literal, TypeAlias
 from pydantic import BaseModel
 
 from .items import ResponseFunctionToolCallOutput
@@ -37,35 +37,35 @@ from openai.types.responses import (
 )
 
 
-ResponseStreamEvent: TypeAlias = Union[
-    ResponseCompletedEvent,
-    ResponseContentPartAddedEvent,
-    ResponseContentPartDoneEvent,
-    ResponseCreatedEvent,
-    ResponseErrorEvent,
-    ResponseFunctionCallArgumentsDeltaEvent,
-    ResponseFunctionCallArgumentsDoneEvent,
-    ResponseInProgressEvent,
-    ResponseFailedEvent,
-    ResponseIncompleteEvent,
-    ResponseOutputItemAddedEvent,
-    ResponseOutputItemDoneEvent,
-    ResponseReasoningSummaryPartAddedEvent,
-    ResponseReasoningSummaryPartDoneEvent,
-    ResponseReasoningSummaryTextDeltaEvent,
-    ResponseReasoningSummaryTextDoneEvent,
-    ResponseReasoningTextDeltaEvent,
-    ResponseReasoningTextDoneEvent,
-    ResponseRefusalDeltaEvent,
-    ResponseRefusalDoneEvent,
-    ResponseTextDeltaEvent,
-    ResponseTextDoneEvent,
-    ResponseWebSearchCallCompletedEvent,
-    ResponseWebSearchCallInProgressEvent,
-    ResponseWebSearchCallSearchingEvent,
-    ResponseOutputTextAnnotationAddedEvent,
-    ResponseQueuedEvent,
-]
+ResponseStreamEvent: TypeAlias = (
+    ResponseCompletedEvent
+    | ResponseContentPartAddedEvent
+    | ResponseContentPartDoneEvent
+    | ResponseCreatedEvent
+    | ResponseErrorEvent
+    | ResponseFunctionCallArgumentsDeltaEvent
+    | ResponseFunctionCallArgumentsDoneEvent
+    | ResponseInProgressEvent
+    | ResponseFailedEvent
+    | ResponseIncompleteEvent
+    | ResponseOutputItemAddedEvent
+    | ResponseOutputItemDoneEvent
+    | ResponseReasoningSummaryPartAddedEvent
+    | ResponseReasoningSummaryPartDoneEvent
+    | ResponseReasoningSummaryTextDeltaEvent
+    | ResponseReasoningSummaryTextDoneEvent
+    | ResponseReasoningTextDeltaEvent
+    | ResponseReasoningTextDoneEvent
+    | ResponseRefusalDeltaEvent
+    | ResponseRefusalDoneEvent
+    | ResponseTextDeltaEvent
+    | ResponseTextDoneEvent
+    | ResponseWebSearchCallCompletedEvent
+    | ResponseWebSearchCallInProgressEvent
+    | ResponseWebSearchCallSearchingEvent
+    | ResponseOutputTextAnnotationAddedEvent
+    | ResponseQueuedEvent
+)
 
 
 # Custom internal events
@@ -103,8 +103,8 @@ class ResponseFunctionCallOutputItemDoneEvent(BaseModel):
 
 TResponseStreamEvent = ResponseStreamEvent
 
-StreamEvent: TypeAlias = Union[
-    TResponseStreamEvent,
-    ResponseFunctionCallOutputItemAddedEvent,
-    ResponseFunctionCallOutputItemDoneEvent,
-]
+StreamEvent: TypeAlias = (
+    TResponseStreamEvent
+    | ResponseFunctionCallOutputItemAddedEvent
+    | ResponseFunctionCallOutputItemDoneEvent
+)
