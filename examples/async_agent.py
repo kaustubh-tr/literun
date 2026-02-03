@@ -55,7 +55,7 @@ async def main():
     # 4. Create the agent
     agent = Agent(
         llm=llm,
-        system_prompt="You are a helful assistant.",
+        system_prompt="You are a helpful assistant.",
         tools=[weather_tool, calc_tool],
         max_iterations=5,
     )

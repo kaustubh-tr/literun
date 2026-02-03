@@ -180,10 +180,11 @@ LiteRun intelligently handles execution mode mismatches:
     - **Recommended** when using the `Agent` or `LLM` in **async** mode, to avoid blocking the event loop.
 
     ```python
-    # 1. Async Tool (Native Async)
+    # 1. Async Tool (Native Async) - Example only, validate URLs in production
     async def fetch(url: str):
+        # Note: In production, validate and sanitize URLs to prevent SSRF
         async with httpx.AsyncClient() as client:
-            return await client.get(url)
+            return await client.get(url)  # Add URL validation before use
 
     tool = Tool(name="fetch", coroutine=fetch, description="Fetch URL")
     ```
@@ -279,13 +280,13 @@ Sometimes tools need access to data that shouldn't be visible to the LLM (e.g., 
 from literun import ToolRuntime
 
 def query_database(query: str, ctx: ToolRuntime) -> str:
-    # 'query' comes from the LLM
-    # 'ctx' comes from your application backend
-
+    # Example only - demonstrates runtime context usage
+    # In production: use parameterized queries, not raw SQL strings
+    
     user_id = getattr(ctx, "user_id")
     db_conn = getattr(ctx, "db_connection")
-
-    # Use user_id to scope the query (Row Level Security)
+    
+    # Use parameterized queries in production to prevent SQL injection
     return db_conn.execute(query, user_id=user_id)
 
 # Initialize tool (schema will ONLY show 'query')

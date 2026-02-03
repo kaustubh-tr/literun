@@ -168,9 +168,10 @@ class Tool(BaseModel):
         properties = {}
         required = []
 
-        for arg in self.args_schema:
-            properties[arg.name] = arg.convert_to_json_schema()
-            required.append(arg.name)
+        if self.args_schema:
+            for arg in self.args_schema:
+                properties[arg.name] = arg.convert_to_json_schema()
+                required.append(arg.name)
 
         return {
             "type": "function",
