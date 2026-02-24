@@ -1,134 +1,102 @@
-"""Message structures for prompts."""
+"""Canonical message and content-block models for conversation state."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Literal
-from pydantic import BaseModel, model_validator
+from typing import Any, Annotated, Literal, TypeAlias
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .constants import Role, ContentType
+
+MessageRole: TypeAlias = Literal["system", "user", "assistant"]
+
+
+class TextBlock(BaseModel):
+    """Plain text content."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text"] = "text"
+    text: str
+
+
+class ToolCallBlock(BaseModel):
+    """Assistant-emitted tool call block."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool_call"] = "tool_call"
+    call_id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+class ToolOutputBlock(BaseModel):
+    """User-emitted tool output block."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool_output"] = "tool_output"
+    call_id: str
+    name: str | None = None
+    output: str | dict[str, Any]
+    is_error: bool | None = None
+
+
+class ReasoningBlock(BaseModel):
+    """Provider-agnostic reasoning metadata block."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["reasoning"] = "reasoning"
+    summary: str | None = None
+    signature: str | None = None
+    reasoning_id: str | None = None
+    provider_meta: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _validate_reasoning_payload(self) -> ReasoningBlock:
+        if (
+            self.summary is None
+            and self.signature is None
+            and self.reasoning_id is None
+            and self.provider_meta is None
+        ):
+            raise ValueError(
+                "reasoning block requires at least one of summary/signature/reasoning_id/provider_meta"
+            )
+        return self
+
+
+MessageContentBlock: TypeAlias = Annotated[
+    TextBlock | ToolCallBlock | ToolOutputBlock | ReasoningBlock,
+    Field(discriminator="type"),
+]
 
 
 class PromptMessage(BaseModel):
-    """Domain representation of a single semantic message in a conversation.
+    """A canonical conversation message with strict role/block invariants."""
 
-    This class is the only place that knows how to convert a semantic
-    message into an OpenAI-compatible message dictionary. It enforces
-    invariants depending on the message type.
-    """
+    model_config = ConfigDict(extra="forbid")
 
-    role: Role | None = None
-    """The role of the message sender.
-
-    Options: `system`, `user`, `assistant`, `tool`
-    """
-
-    text: str | None = None
-    """The text content of the message."""
-
-    name: str | None = None
-    """The name of the tool."""
-
-    arguments: str | None = None
-    """The arguments for the tool as a JSON string."""
-
-    call_id: str | None = None
-    """The call ID of the tool call."""
-
-    output: str | None = None
-    """The output of the tool execution."""
-
-    content_type: ContentType
-    """The type of content.
-
-    Options: `text`, `tool_call`, `tool_call_output`
-    """
+    role: MessageRole
+    content: list[MessageContentBlock]
 
     @model_validator(mode="after")
-    def _validate_invariants(self) -> PromptMessage:
-        """Enforce invariants so that invalid messages are never constructed.
+    def _validate_message_invariants(self) -> PromptMessage:
+        if not self.content:
+            raise ValueError("message content cannot be empty")
 
-        Raises:
-            ValueError: If required fields are missing for the given content_type.
-        """
-        # Text messages (system / user / assistant)
-        if self.content_type == "text":
-            if self.role is None:
-                raise ValueError("role is required for text messages")
-            if not isinstance(self.text, str):
-                raise ValueError("text is required for text messages")
+        allowed_by_role: dict[str, set[str]] = {
+            "system": {"text"},
+            "assistant": {"text", "tool_call", "reasoning"},
+            "user": {"text", "tool_output"},
+        }
 
-        # Tool call (model -> agent)
-        elif self.content_type == "tool_call":
-            if not self.name:
-                raise ValueError("name is required for tool_call")
-            if not isinstance(self.arguments, str):
-                raise ValueError("arguments must be a JSON string")
-            if not self.call_id:
-                raise ValueError("call_id is required for tool_call")
-
-        # Tool output (agent -> model)
-        elif self.content_type == "tool_call_output":
-            if not self.call_id:
-                raise ValueError("call_id is required for tool_call_output")
-            if not isinstance(self.output, str):
-                raise ValueError("output must be a string")
-        else:
-            raise ValueError(f"Unsupported content_type: {self.content_type}")
+        allowed = allowed_by_role[self.role]
+        for block in self.content:
+            if block.type not in allowed:
+                raise ValueError(
+                    f"block type '{block.type}' is not valid for role '{self.role}'"
+                )
 
         return self
 
-    def convert_to_openai_message(self) -> Dict[str, Any]:
-        """Convert the PromptMessage to an OpenAI-compatible message dictionary.
-
-        Returns:
-            Dict[str, Any]: The formatted message dictionary.
-
-        Raises:
-            ValueError: If required fields are missing for the specified content_type.
-            RuntimeError: If the message state is invalid (should not occur).
-        """
-        # System / User / Assistant messages
-        if self.content_type == "text":
-            if self.role == "system":
-                return {
-                    "role": self.role,
-                    "content": [
-                        {"type": "input_text", "text": self.text},
-                    ],
-                }
-            elif self.role == "user":
-                return {
-                    "role": self.role,
-                    "content": [
-                        {"type": "input_text", "text": self.text},
-                    ],
-                }
-            elif self.role == "assistant":
-                return {
-                    "role": self.role,
-                    "content": [
-                        {"type": "output_text", "text": self.text},
-                    ],
-                }
-            else:
-                raise ValueError(f"Unsupported role: {self.role}")
-            
-        # Tool call
-        if self.content_type == "tool_call":
-            return {
-                "type": "function_call",
-                "name": self.name,
-                "arguments": self.arguments,
-                "call_id": self.call_id,
-            }
-
-        # Tool output
-        if self.content_type == "tool_call_output":
-            return {
-                "type": "function_call_output",
-                "call_id": self.call_id,
-                "output": self.output,
-            }
-
-        # Should never reach here due to validation
-        raise ValueError("Invalid PromptMessage state")
