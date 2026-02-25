@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import asyncio
 from typing import Any, get_type_hints
 from collections.abc import Awaitable, Callable
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from .errors import AgentToolExecutionError, AgentToolCallError
+
+logger = logging.getLogger(__name__)
 
 
 class ToolRuntime(BaseModel):
@@ -114,7 +117,12 @@ class Tool(BaseModel):
         return final_args
     
     def _python_type_to_json_schema(self, py_type: type) -> str:
-        """Map Python type annotations to JSON Schema types."""
+        """Map a Python type annotation to its JSON Schema type string.
+
+        Supports ``str``, ``int``, ``float``, ``bool``, ``list``, and ``dict``.
+        Any other type falls back to ``"string"`` and emits a ``WARNING`` so that
+        unexpected annotations are visible during development.
+        """
         PYTHON_TO_JSON_SCHEMA = {
             str: "string",
             int: "integer",
@@ -123,7 +131,15 @@ class Tool(BaseModel):
             list: "array",
             dict: "object",
         }
-        return PYTHON_TO_JSON_SCHEMA.get(py_type, "string")
+        json_type = PYTHON_TO_JSON_SCHEMA.get(py_type)
+        if json_type is None:
+            logger.warning(
+                "Unsupported type annotation %r in tool %r; falling back to 'string'.",
+                py_type,
+                self.name,
+            )
+            return "string"
+        return json_type
 
     def _generate_parameters_schema(self) -> dict[str, Any]:
         """Helper to dynamically generate JSON schema while hiding framework artifacts."""
