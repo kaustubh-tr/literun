@@ -1,84 +1,85 @@
-import sys
 import os
+import sys
 import unittest
+
+from pydantic import ValidationError
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from literun import PromptTemplate, PromptMessage
+from literun import (
+    PromptMessage,
+    PromptTemplate,
+    ReasoningBlock,
+    TextBlock,
+    ToolCallBlock,
+    ToolOutputBlock,
+)
+from literun.errors import AgentInputError, AgentSerializationError
 
 
-class TestPromptTemplates(unittest.TestCase):
-    """
-    Unit tests for PromptTemplate and PromptMessage construction and validation.
-    """
+class TestPromptMessage(unittest.TestCase):
+    def test_message_role_invariants(self):
+        PromptMessage(role="system", content=[TextBlock(text="rules")])
+        PromptMessage(
+            role="assistant",
+            content=[ToolCallBlock(call_id="c1", name="search", arguments={"q": "x"})],
+        )
+        PromptMessage(
+            role="user",
+            content=[ToolOutputBlock(call_id="c1", output="ok")],
+        )
 
-    def test_message_validation_invariants(self):
-        """Verify that invalid message combinations raise errors."""
+        with self.assertRaises(ValidationError):
+            PromptMessage(role="system", content=[])
 
-        # 1. Valid message
-        msg = PromptMessage(role="user", content_type="text", text="Hello")
-        openai_msg = msg.convert_to_openai_message()
-        self.assertEqual(openai_msg["role"], "user")
+        with self.assertRaises(ValidationError):
+            PromptMessage(
+                role="system",
+                content=[ToolCallBlock(call_id="c1", name="x", arguments={})],
+            )
 
-        # 2. Invalid: Missing role for text input
-        with self.assertRaises(ValueError):
-            PromptMessage(content_type="text", text="Hello").convert_to_openai_message()
 
-        # 3. Invalid: Missing text content for text input
-        with self.assertRaises(ValueError):
-            PromptMessage(role="user", content_type="text").convert_to_openai_message()
+class TestPromptTemplate(unittest.TestCase):
+    def test_builder_methods(self):
+        prompt = PromptTemplate()
+        prompt.add_system("S")
+        prompt.add_user("U")
+        prompt.add_assistant("A")
+        prompt.add_tool_call(name="weather", arguments={"city": "Tokyo"}, call_id="tc1")
+        prompt.add_tool_output(call_id="tc1", output="22C", name="weather")
+        prompt.add_reasoning(summary="short summary", reasoning_id="r1")
 
-    def test_template_builder_methods(self):
-        """Verify helper methods for building a template."""
-        template = PromptTemplate()
-        template.add_system("System prompt")
-        template.add_user("User prompt")
+        messages = prompt.to_messages()
+        self.assertEqual(len(messages), 6)
+        self.assertEqual(messages[0].role, "system")
+        self.assertEqual(messages[1].role, "user")
+        self.assertEqual(messages[2].role, "assistant")
+        self.assertEqual(messages[3].content[0].type, "tool_call")
+        self.assertEqual(messages[4].content[0].type, "tool_output")
+        self.assertIsInstance(messages[5].content[0], ReasoningBlock)
 
-        messages = template.convert_to_openai_input()
-        self.assertEqual(len(messages), 2)
+    def test_add_tool_call_json_string(self):
+        prompt = PromptTemplate()
+        prompt.add_tool_call(name="search", arguments='{"q":"hello"}', call_id="c1")
+        msg = prompt.to_messages()[0]
+        block = msg.content[0]
+        self.assertEqual(block.type, "tool_call")
+        self.assertEqual(block.arguments, {"q": "hello"})
 
-        # 1. Check System
-        self.assertEqual(messages[0]["role"], "system")
-        # Note: The structure depends on to_openai_message implementation.
-        # Assuming typical content=[{"type": "text", "text": "..."}]
-        content = messages[0]["content"]
-        if isinstance(content, list):
-            self.assertEqual(content[0]["text"], "System prompt")
-        else:
-            self.assertEqual(content, "System prompt")
+    def test_add_tool_call_invalid_json(self):
+        prompt = PromptTemplate()
+        with self.assertRaises(AgentSerializationError):
+            prompt.add_tool_call(name="search", arguments="{bad json", call_id="c1")
 
-        # 2. Check User
-        self.assertEqual(messages[1]["role"], "user")
+        with self.assertRaises(AgentInputError):
+            prompt.add_tool_call(name="search", arguments=123, call_id="c1")  # type: ignore[arg-type]
 
-    def test_tool_call_and_output_messages(self):
-        """Verify adding tool calls and outputs to the template."""
-        template = PromptTemplate()
-        template.add_tool_call(name="test_tool", arguments="{}", call_id="123")
-        template.add_tool_output(call_id="123", output="result")
-
-        messages = template.convert_to_openai_input()
-        self.assertEqual(len(messages), 2)
-
-        # Check that we have two messages representing the call cycle
-        # We check invariant properties rather than exact implementation details
-        # which might change (e.g. role vs type keys).
-
-        call_msg = messages[0]
-        output_msg = messages[1]
-
-        # Just ensure they are not empty and distinguishable
-        self.assertTrue(call_msg)
-        self.assertTrue(output_msg)
-
-        # If implementation uses 'type' key (internal) or 'role' (OpenAI)
-        # Call message should be function type
-        if "type" in call_msg:
-            self.assertEqual(call_msg["type"], "function_call")
-
-        # Output message uses role='tool'
-        if "role" in output_msg:
-            self.assertEqual(output_msg["role"], "tool")
+    def test_copy(self):
+        prompt = PromptTemplate().add_user("hello")
+        clone = prompt.copy()
+        self.assertEqual(len(prompt), len(clone))
+        self.assertIsNot(prompt.messages, clone.messages)
 
 
 if __name__ == "__main__":

@@ -1,168 +1,135 @@
-import sys
 import os
+import sys
 import unittest
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from literun import Agent, Tool, ArgsSchema, ChatOpenAI
-from literun.results import RunResult
+from literun import Agent, Tool
+from literun.constants import ToolCall
+from literun.errors import AgentMaxIterationsError
+from literun.events import (
+    MessageOutputStreamDelta,
+    OtherStreamEvent,
+    StreamEndEvent,
+    ToolCallStreamDone,
+)
+from literun.results import RunResult, RunStreamEvent
+from literun.usage import TokenUsage
 
-# Check if API key is set to skip integration tests
-SKIP_REAL_API_TESTS = os.getenv("OPENAI_API_KEY") is None
-
-
-class TestAgentConstructor(unittest.TestCase):
-    """
-    Unit tests for Agent initialization and configuration
-    that do not require external API calls.
-    """
-
-    def test_tools_registration(self):
-        """Verify tools are correctly registered during initialization."""
-        tool = Tool(
-            func=lambda: None,
-            name="test_tool",
-            description="desc",
-            args_schema=[],
-        )
-        llm = ChatOpenAI(model="gpt-4o", api_key="fake-api-key")  # Mock key
-        agent = Agent(llm=llm, tools=[tool])
-
-        # Verify tool is stored in internal list
-        self.assertIn(tool, agent.tools)
-
-    def test_duplicate_tools_error(self):
-        """Verify that registering duplicate tools raises a ValueError."""
-        tool = Tool(
-            func=lambda: None,
-            name="test_tool",
-            description="desc",
-            args_schema=[],
-        )
-        llm = ChatOpenAI(model="gpt-4o", api_key="fake-api-key")
-
-        with self.assertRaises(ValueError):
-            Agent(llm=llm, tools=[tool, tool])
+from tests.helpers import FakeLLM
 
 
-@unittest.skipIf(SKIP_REAL_API_TESTS, "OPENAI_API_KEY not set")
-class TestAgentIntegration(unittest.TestCase):
-    """
-    Integration tests for Agent execution using the real OpenAI API.
-    WARNING: These tests incur costs.
-    """
-
-    def setUp(self):
-        """Initialize common checking tools for tests."""
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
-
-    def test_initialization_defaults(self):
-        """Verify default values for an Agent instance."""
-        agent = Agent(llm=self.llm, system_prompt="Test system prompt")
-
-        self.assertEqual(agent.llm.model, "gpt-4o")
-        self.assertEqual(agent.system_prompt, "Test system prompt")
-        self.assertIsNone(agent.tools)
-
-    def test_invoke_basic_response(self):
-        """Verify a simple synchronous invocation (chat)."""
-        agent = Agent(llm=self.llm, system_prompt="You are a helpful assistant.")
-
-        response = agent.invoke(user_input="Say 'Hello world' and nothing else.")
-
-        self.assertIsInstance(response, RunResult)
-        self.assertIn("Hello world", response.final_output)
-
-    def test_invoke_with_tool_call(self):
-        """Verify the agent can correctly call a tool and return the output."""
-
-        # 1. Define Tool
-        def echo(msg: str) -> str:
-            return f"Echo: {msg}"
-
-        tool = Tool(
-            name="echo",
-            description="Echoes the message back to the user",
-            args_schema=[
-                ArgsSchema(name="msg", type=str, description="The message to echo")
+class TestAgentSync(unittest.TestCase):
+    def test_run_text_only(self):
+        llm = FakeLLM(
+            model="fake-model",
+            scripted_responses=[
+                {
+                    "text": "hello world",
+                    "tool_calls": [],
+                    "usage": TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15),
+                    "items": [],
+                }
             ],
-            func=echo,
         )
+        agent = Agent(llm=llm)
+        result = agent.run("say hello")
 
-        # 2. Setup Agent
-        agent = Agent(
-            llm=self.llm,
-            system_prompt="You are a helpful assistant. Use the echo tool when asked.",
-            tools=[tool],
-        )
+        self.assertIsInstance(result, RunResult)
+        self.assertEqual(result.output, "hello world")
+        self.assertEqual(result.token_usage.total_tokens, 15)
 
-        # 3. Execute
-        response = agent.invoke(user_input="Please use the echo tool to say 'hello'")
+    def test_run_with_tool_loop(self):
+        def add(a: int, b: int) -> int:
+            return a + b
 
-        # 4. Assert
-        self.assertIn("Echo: hello", response.final_output)
+        add_tool = Tool.from_callable(add, name="add")
 
-    def test_stream_basic_response(self):
-        """Verify streaming execution collects text deltas correctly."""
-        agent = Agent(llm=self.llm, system_prompt="You are a helpful assistant.")
-
-        chunks = []
-        for result in agent.stream(user_input="Say 'Hello world' and nothing else."):
-            event = result.event
-            if event.type == "response.output_text.delta":
-                chunks.append(event.delta)
-
-        full_response = "".join(chunks)
-        self.assertIn("Hello world", full_response)
-
-    def test_stream_with_tool_call(self):
-        """Verify streaming execution handles tool calls correctly."""
-
-        # 1. Define Tool
-        def get_topic_info(topic: str) -> str:
-            return f"Information about {topic}"
-
-        tool = Tool(
-            name="get_info",
-            description="Get information about a topic",
-            args_schema=[
-                ArgsSchema(name="topic", type=str, description="The topic to explain")
+        llm = FakeLLM(
+            model="fake-model",
+            scripted_responses=[
+                {
+                    "text": "",
+                    "tool_calls": [ToolCall(call_id="c1", name="add", arguments={"a": 2, "b": 3})],
+                    "usage": TokenUsage(input_tokens=5, output_tokens=2, total_tokens=7),
+                    "items": [],
+                    "tool_call_messages": [
+                        {
+                            "type": "function_call",
+                            "call_id": "c1",
+                            "name": "add",
+                            "arguments": {"a": 2, "b": 3},
+                        }
+                    ],
+                },
+                {
+                    "text": "result is 5",
+                    "tool_calls": [],
+                    "usage": TokenUsage(input_tokens=8, output_tokens=4, total_tokens=12),
+                    "items": [],
+                },
             ],
-            func=get_topic_info,
         )
+        agent = Agent(llm=llm, tools=[add_tool], max_iterations=3)
+        result = agent.run("add 2 and 3")
 
-        # 2. Setup Agent
-        agent = Agent(
-            llm=self.llm,
-            system_prompt="You are a helpful assistant. Use get_info tool when asked.",
-            tools=[tool],
+        self.assertEqual(result.output, "result is 5")
+        self.assertEqual(result.token_usage.total_tokens, 19)
+        self.assertTrue(any(item.type == "tool.output.item" for item in result.new_items))
+
+    def test_run_max_iterations_error(self):
+        def noop() -> str:
+            return "ok"
+
+        llm = FakeLLM(
+            model="fake-model",
+            scripted_responses=[
+                {
+                    "text": "",
+                    "tool_calls": [ToolCall(call_id="c1", name="noop", arguments={})],
+                    "usage": TokenUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+                    "items": [],
+                }
+            ],
         )
+        agent = Agent(llm=llm, tools=[Tool.from_callable(noop, name="noop")], max_iterations=1)
 
-        # 3. Stream Execution
-        tool_call_finished = False
-        final_text = ""
+        with self.assertRaises(AgentMaxIterationsError):
+            agent.run("loop forever")
 
-        for result in agent.stream(user_input="Get information about Python"):
-            event = result.event
+    def test_stream_with_tool_then_final_text(self):
+        def add(a: int, b: int) -> int:
+            return a + b
 
-            # Track key events to verify flow
-            if event.type == "response.function_call_arguments.done":
-                tool_call_finished = True
-            elif event.type == "response.output_text.delta":
-                final_text += event.delta
+        llm = FakeLLM(
+            model="fake-model",
+            scripted_streams=[
+                [
+                    ToolCallStreamDone(
+                        id="c1",
+                        call_id="c1",
+                        name="add",
+                        output={"a": 1, "b": 2},
+                    ),
+                    OtherStreamEvent(id="turn1"),
+                ],
+                [
+                    MessageOutputStreamDelta(id="m1", delta="3"),
+                    StreamEndEvent(
+                        id="turn2",
+                        token_usage=TokenUsage(input_tokens=3, output_tokens=1, total_tokens=4),
+                    ),
+                ],
+            ],
+        )
+        agent = Agent(llm=llm, tools=[Tool.from_callable(add, name="add")], max_iterations=3)
 
-        # 4. Assert
-        self.assertTrue(tool_call_finished, "Tool call arguments should be completed.")
-        self.assertIn("Python", final_text)
-
-    def test_empty_input_error(self):
-        """Verify that empty user input raises a ValueError."""
-        agent = Agent(llm=self.llm, system_prompt="Booting...")
-
-        with self.assertRaises(ValueError):
-            # Consuming generator to trigger execution
-            list(agent.stream(user_input=""))
+        events = list(agent.stream("add 1 and 2"))
+        self.assertTrue(events)
+        self.assertIsInstance(events[0], RunStreamEvent)
+        self.assertTrue(any(e.event.type == "tool.output.done" for e in events))
+        self.assertTrue(any(e.output.endswith("3") for e in events))
 
 
 if __name__ == "__main__":

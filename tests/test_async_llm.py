@@ -1,85 +1,61 @@
-import sys
 import os
+import sys
 import unittest
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from literun import ChatOpenAI, Tool, ArgsSchema
-from literun.utils import extract_tool_calls
+from literun import ChatOpenAI
+from literun.events import MessageOutputStreamDelta, StreamEndEvent
+from literun.prompt import PromptTemplate
+from literun.usage import TokenUsage
+
+from tests.helpers import FakeLLM
+
+try:
+    import openai  # noqa: F401
+
+    HAS_OPENAI_SDK = True
+except Exception:
+    HAS_OPENAI_SDK = False
 
 
-# Check if API key is set
-SKIP_REAL_API_TESTS = os.getenv("OPENAI_API_KEY") is None
-
-
-@unittest.skipIf(SKIP_REAL_API_TESTS, "OPENAI_API_KEY not set")
-class TestAsyncChatOpenAI(unittest.IsolatedAsyncioTestCase):
-    """
-    Integration tests for ChatOpenAI async client wrapper.
-    """
-
-    async def asyncTearDown(self):
-        if hasattr(self, "llm"):
-            await self.llm.aclose()
-
-    async def test_ainvoke_simple_text(self):
-        """Verify asynchronous text generation."""
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
-        messages = [{"role": "user", "content": "Say 'hello async'"}]
-
-        response = await self.llm.ainvoke(messages)
-
-        self.assertIsNotNone(response.output_text)
-        self.assertIn("hello", response.output_text.lower())
-
-    async def test_astream_simple_text(self):
-        """Verify asynchronous streaming text generation."""
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
-        messages = [{"role": "user", "content": "Say 'hello async'"}]
-
-        chunks = []
-        async for event in self.llm.astream(messages=messages):
-            if event.type == "response.output_text.delta":
-                if event.delta:
-                    chunks.append(event.delta)
-
-        full_text = "".join(chunks)
-        self.assertIn("hello", full_text.lower())
-
-    async def test_bind_tools_tool_call_async(self):
-        """Verify binding tools enables tool calls in async response."""
-
-        # 1. Define Tool
-        def get_weather(location: str):
-            return "Sunny"
-
-        tool = Tool(
-            name="get_weather",
-            description="Get weather for a location",
-            func=get_weather,
-            args_schema=[ArgsSchema(name="location", type=str, description="City")],
+class TestAsyncBaseLLMBehavior(unittest.IsolatedAsyncioTestCase):
+    async def test_fake_llm_agenerate_and_astream(self):
+        llm = FakeLLM(
+            model="fake-model",
+            scripted_responses=[{"text": "ok", "tool_calls": [], "usage": None, "items": []}],
+            scripted_streams=[[MessageOutputStreamDelta(id="1", delta="x"), StreamEndEvent(id="2")]],
         )
 
-        # 2. Setup LLM
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
-        self.llm.bind_tools(tools=[tool])
+        resp = await llm.agenerate(messages=[{"role": "user", "content": "hi"}], stream=False)
+        self.assertEqual(resp["text"], "ok")
 
-        # 3. Invoke with tool-triggering prompt
-        messages = [{"role": "user", "content": "What is the weather in London?"}]
-        response = await self.llm.ainvoke(messages)
+        stream = await llm.agenerate(messages=[{"role": "user", "content": "hi"}], stream=True)
+        adapter = llm.get_stream_adapter()
+        chunks = []
+        async for event in adapter.aprocess_stream(stream):
+            chunks.append(event)
+        self.assertEqual(len(chunks), 2)
 
-        # 4. Extract and Verify
-        tool_calls = extract_tool_calls(response)
 
-        if tool_calls:
-            self.assertGreater(len(tool_calls), 0)
-            tool_names = [call["name"] for call in tool_calls]
-            self.assertIn("get_weather", tool_names)
-        else:
-            print(
-                "WARNING: Model did not generate a tool call in test_bind_tools_tool_call_async."
-            )
+@unittest.skipUnless(HAS_OPENAI_SDK, "openai sdk not installed")
+class TestAsyncChatOpenAI(unittest.IsolatedAsyncioTestCase):
+    async def test_aclose(self):
+        llm = ChatOpenAI(model="gpt-5-nano", api_key="test-key")
+        await llm.aclose()
+
+    async def test_async_context_manager(self):
+        async with ChatOpenAI(model="gpt-5-nano", api_key="test-key") as llm:
+            self.assertIsInstance(llm, ChatOpenAI)
+
+    async def test_prompt_normalization_still_sync_safe(self):
+        llm = ChatOpenAI(model="gpt-5-nano", api_key="test-key")
+        prompt = PromptTemplate().add_user("hello")
+        normalized = llm.normalize_messages(prompt)
+        self.assertTrue(isinstance(normalized, list))
+        self.assertEqual(normalized[0]["role"], "user")
+        await llm.aclose()
 
 
 if __name__ == "__main__":
