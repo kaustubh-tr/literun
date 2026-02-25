@@ -114,7 +114,12 @@ class Tool(BaseModel):
         return final_args
     
     def _python_type_to_json_schema(self, py_type: type) -> str:
-        """Map Python type annotations to JSON Schema types."""
+        """Map a Python type annotation to its JSON Schema type string.
+
+        Supports ``str``, ``int``, ``float``, ``bool``, ``list``, and ``dict``.
+        Any other type falls back to ``"string"`` and emits a :class:`UserWarning` so
+        that unexpected annotations are visible during development.
+        """
         PYTHON_TO_JSON_SCHEMA = {
             str: "string",
             int: "integer",
@@ -123,7 +128,16 @@ class Tool(BaseModel):
             list: "array",
             dict: "object",
         }
-        return PYTHON_TO_JSON_SCHEMA.get(py_type, "string")
+        json_type = PYTHON_TO_JSON_SCHEMA.get(py_type)
+        if json_type is None:
+            import warnings
+            warnings.warn(
+                f"Unsupported type annotation {py_type!r} in tool {self.name!r};"
+                " falling back to 'string'.",
+                stacklevel=2,
+            )
+            return "string"
+        return json_type
 
     def _generate_parameters_schema(self) -> dict[str, Any]:
         """Helper to dynamically generate JSON schema while hiding framework artifacts."""
@@ -139,8 +153,20 @@ class Tool(BaseModel):
             # Hide the framework runtime parameter from the LLM
             if param.annotation is ToolRuntime:
                 continue
-            
-            properties[name] = {"type": self._python_type_to_json_schema(param.annotation)}
+
+            # Variadic parameters do not map to named JSON properties.
+            if param.kind in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            ):
+                continue
+
+            annotation = (
+                param.annotation
+                if param.annotation is not inspect.Parameter.empty
+                else str
+            )
+            properties[name] = {"type": self._python_type_to_json_schema(annotation)}
             if param.default is inspect.Parameter.empty:
                 required.append(name)
 
@@ -317,14 +343,6 @@ class Tool(BaseModel):
             return self.func(*args, **kwargs)
         raise NotImplementedError(
             "This tool does not have a synchronous function implementation."
-        )
-
-    def __await__(self, *args, **kwargs) -> Awaitable[Any]:
-        """Await support for async execution."""
-        if self.coroutine is not None:
-            return self.coroutine(*args, **kwargs).__await__()
-        raise NotImplementedError(
-            "This tool does not have an asynchronous coroutine implementation."
         )
 
     def __str__(self) -> str:

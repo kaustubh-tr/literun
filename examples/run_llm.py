@@ -13,7 +13,7 @@ def main() -> None:
         print("Please set OPENAI_API_KEY.")
         return
 
-    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models doesn't support temperature.
+    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models don't support temperature.
 
     messages = llm.normalize_messages(
         [{"role": "user", "content": "Tell me one short joke about Python."}]

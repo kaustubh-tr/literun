@@ -26,7 +26,7 @@ async def main() -> None:
         print("Please set OPENAI_API_KEY.")
         return
 
-    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models doesn't support temperature.
+    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models don't support temperature.
     calc_tool = Tool.from_callable(calculator, name="calculator")
 
     agent = Agent(
