@@ -53,13 +53,40 @@ class TestTokenUsage(unittest.TestCase):
         self.assertEqual(merged.output_tokens, 7)
         self.assertEqual(merged.cached_read_tokens, 3)
         self.assertEqual(merged.reasoning_tokens, 5)
+        # Both sides have explicit provider totals; result should be their sum.
         self.assertEqual(merged.total_tokens, 24)
+        self.assertEqual(merged.resolved_total_tokens, 24)
 
     def test_addition_uses_fallback_when_provider_total_missing(self):
-        a = TokenUsage(input_tokens=5, output_tokens=5, total_tokens=None)
-        b = TokenUsage(input_tokens=1, output_tokens=2, total_tokens=None)
+        # Neither side has a provider-reported total; include optional buckets.
+        a = TokenUsage(
+            input_tokens=5,
+            output_tokens=5,
+            cached_read_tokens=2,
+            reasoning_tokens=3,
+            total_tokens=None,
+        )
+        b = TokenUsage(
+            input_tokens=1,
+            output_tokens=2,
+            cached_read_tokens=1,
+            total_tokens=None,
+        )
         merged = a + b
-        self.assertEqual(merged.total_tokens, 13)
+        # total_tokens must be None so resolved_total_tokens recomputes from buckets.
+        self.assertIsNone(merged.total_tokens)
+        # resolved: (5+1) + (5+2) + (2+1) + (3+0) = 6 + 7 + 3 + 3 = 19
+        self.assertEqual(merged.resolved_total_tokens, 19)
+
+    def test_addition_mixed_provider_and_fallback(self):
+        # One side has a provider total, the other does not.
+        a = TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
+        b = TokenUsage(input_tokens=3, output_tokens=2, total_tokens=None)
+        merged = a + b
+        # Mixed mode: provider total is absent on one side, so total_tokens is None.
+        self.assertIsNone(merged.total_tokens)
+        # resolved falls back to bucket sum: (10+3) + (5+2) = 20
+        self.assertEqual(merged.resolved_total_tokens, 20)
 
 
 if __name__ == "__main__":

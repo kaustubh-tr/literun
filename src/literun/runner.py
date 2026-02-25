@@ -439,13 +439,8 @@ class Runner:
     def _accumulate_token_usage(total_usage: TokenUsage, new_usage: TokenUsage) -> None:
         """Accumulate token usage in-place using __add__."""
         result = total_usage + new_usage
-        total_usage.input_tokens = result.input_tokens
-        total_usage.output_tokens = result.output_tokens
-        total_usage.cached_read_tokens = result.cached_read_tokens
-        total_usage.cached_write_tokens = result.cached_write_tokens
-        total_usage.reasoning_tokens = result.reasoning_tokens
-        total_usage.tool_use_tokens = result.tool_use_tokens
-        total_usage.total_tokens = result.total_tokens
+        for field_name, value in vars(result).items():
+            setattr(total_usage, field_name, value)
 
     @staticmethod
     def _copy_token_usage(token_usage: TokenUsage) -> TokenUsage:
@@ -534,7 +529,13 @@ class Runner:
 
     @staticmethod
     def _stream_text_fragment(event: StreamEvent, allow_done: bool) -> str:
-        """Extract text contribution from a stream event for per-turn reconstruction."""
+        """Extract text contribution from a stream event for per-turn reconstruction.
+
+        Delta events (``message.output.delta``) are always used when present.
+        Done events (``message.output.done``) are used as a fallback only when
+        no delta text has been accumulated yet for the current turn, preventing
+        double-counting when a provider emits both delta and done events.
+        """
         if event is None:
             return ""
 

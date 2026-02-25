@@ -30,7 +30,7 @@ def main() -> None:
         print("Please set OPENAI_API_KEY.")
         return
 
-    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models doesn't support temperature.
+    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models don't support temperature.
     weather_tool = Tool.from_callable(get_weather, name="get_weather")
     search_tool = Tool.from_callable(search_database, name="search_database")
 

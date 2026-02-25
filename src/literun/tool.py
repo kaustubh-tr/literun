@@ -139,8 +139,20 @@ class Tool(BaseModel):
             # Hide the framework runtime parameter from the LLM
             if param.annotation is ToolRuntime:
                 continue
-            
-            properties[name] = {"type": self._python_type_to_json_schema(param.annotation)}
+
+            # Variadic parameters do not map to named JSON properties.
+            if param.kind in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            ):
+                continue
+
+            annotation = (
+                param.annotation
+                if param.annotation is not inspect.Parameter.empty
+                else str
+            )
+            properties[name] = {"type": self._python_type_to_json_schema(annotation)}
             if param.default is inspect.Parameter.empty:
                 required.append(name)
 
@@ -317,14 +329,6 @@ class Tool(BaseModel):
             return self.func(*args, **kwargs)
         raise NotImplementedError(
             "This tool does not have a synchronous function implementation."
-        )
-
-    def __await__(self, *args, **kwargs) -> Awaitable[Any]:
-        """Await support for async execution."""
-        if self.coroutine is not None:
-            return self.coroutine(*args, **kwargs).__await__()
-        raise NotImplementedError(
-            "This tool does not have an asynchronous coroutine implementation."
         )
 
     def __str__(self) -> str:
