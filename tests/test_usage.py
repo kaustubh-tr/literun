@@ -58,7 +58,7 @@ class TestTokenUsage(unittest.TestCase):
         self.assertEqual(merged.resolved_total_tokens, 24)
 
     def test_addition_uses_fallback_when_provider_total_missing(self):
-        # Neither side has a provider-reported total; include optional buckets.
+        # Neither side has a provider-reported total; total is computed from buckets.
         a = TokenUsage(
             input_tokens=5,
             output_tokens=5,
@@ -73,20 +73,28 @@ class TestTokenUsage(unittest.TestCase):
             total_tokens=None,
         )
         merged = a + b
-        # total_tokens must be None so resolved_total_tokens recomputes from buckets.
-        self.assertIsNone(merged.total_tokens)
         # resolved: (5+1) + (5+2) + (2+1) + (3+0) = 6 + 7 + 3 + 3 = 19
+        self.assertEqual(merged.total_tokens, 19)
         self.assertEqual(merged.resolved_total_tokens, 19)
 
     def test_addition_mixed_provider_and_fallback(self):
-        # One side has a provider total, the other does not.
+        # One side has a provider total, the other does not; resolved is always used.
         a = TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
         b = TokenUsage(input_tokens=3, output_tokens=2, total_tokens=None)
         merged = a + b
-        # Mixed mode: provider total is absent on one side, so total_tokens is None.
-        self.assertIsNone(merged.total_tokens)
-        # resolved falls back to bucket sum: (10+3) + (5+2) = 20
+        # a.resolved = 15 (provider), b.resolved = 3+2 = 5 → sum = 20
+        self.assertEqual(merged.total_tokens, 20)
         self.assertEqual(merged.resolved_total_tokens, 20)
+
+    def test_iadd_mutates_in_place(self):
+        a = TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
+        b = TokenUsage(input_tokens=3, output_tokens=2, total_tokens=5)
+        original_id = id(a)
+        a += b
+        self.assertEqual(id(a), original_id)
+        self.assertEqual(a.input_tokens, 13)
+        self.assertEqual(a.output_tokens, 7)
+        self.assertEqual(a.total_tokens, 20)
 
 
 if __name__ == "__main__":

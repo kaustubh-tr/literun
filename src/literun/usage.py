@@ -32,12 +32,15 @@ class TokenUsage:
             cached_write_tokens=_add_opt(self.cached_write_tokens, other.cached_write_tokens),
             reasoning_tokens=_add_opt(self.reasoning_tokens, other.reasoning_tokens),
             tool_use_tokens=_add_opt(self.tool_use_tokens, other.tool_use_tokens),
-            total_tokens=(
-                self.total_tokens + other.total_tokens
-                if self.total_tokens is not None and other.total_tokens is not None
-                else None
-            ),
+            total_tokens=self.resolved_total_tokens + other.resolved_total_tokens,
         )
+
+    def __iadd__(self, other: TokenUsage) -> TokenUsage:
+        """In-place merge; delegates to ``__add__``."""
+        result = self + other
+        for field_name, value in vars(result).items():
+            setattr(self, field_name, value)
+        return self
 
     @property
     def resolved_total_tokens(self) -> int:

@@ -437,10 +437,8 @@ class Runner:
 
     @staticmethod
     def _accumulate_token_usage(total_usage: TokenUsage, new_usage: TokenUsage) -> None:
-        """Accumulate token usage in-place using __add__."""
-        result = total_usage + new_usage
-        for field_name, value in vars(result).items():
-            setattr(total_usage, field_name, value)
+        """Accumulate token usage in-place using __iadd__."""
+        total_usage += new_usage
 
     @staticmethod
     def _copy_token_usage(token_usage: TokenUsage) -> TokenUsage:
