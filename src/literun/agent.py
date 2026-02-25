@@ -105,11 +105,12 @@ class Agent(BaseModel):
         Yields:
             RunStreamEvent objects containing streaming events
         """
-        return Runner.stream(
+        for event in Runner.stream(
             agent=self,
             messages=messages,
             runtime_context=runtime_context,
-        )
+        ):
+            yield event
 
     async def astream(
         self,
@@ -126,8 +127,9 @@ class Agent(BaseModel):
         Yields:
             RunStreamEvent objects containing streaming events
         """
-        return Runner.astream(
+        async for event in Runner.astream(
             agent=self,
             messages=messages,
             runtime_context=runtime_context,
-        )
+        ):
+            yield event
