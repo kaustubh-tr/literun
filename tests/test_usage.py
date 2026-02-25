@@ -86,16 +86,6 @@ class TestTokenUsage(unittest.TestCase):
         self.assertEqual(merged.total_tokens, 20)
         self.assertEqual(merged.resolved_total_tokens, 20)
 
-    def test_iadd_mutates_in_place(self):
-        a = TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
-        b = TokenUsage(input_tokens=3, output_tokens=2, total_tokens=5)
-        original_id = id(a)
-        a += b
-        self.assertEqual(id(a), original_id)
-        self.assertEqual(a.input_tokens, 13)
-        self.assertEqual(a.output_tokens, 7)
-        self.assertEqual(a.total_tokens, 20)
-
 
 if __name__ == "__main__":
     unittest.main()

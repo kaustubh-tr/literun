@@ -35,13 +35,6 @@ class TokenUsage:
             total_tokens=self.resolved_total_tokens + other.resolved_total_tokens,
         )
 
-    def __iadd__(self, other: TokenUsage) -> TokenUsage:
-        """In-place merge; delegates to ``__add__``."""
-        result = self + other
-        for field_name, value in vars(result).items():
-            setattr(self, field_name, value)
-        return self
-
     @property
     def resolved_total_tokens(self) -> int:
         """Resolve total tokens from provider value or fallback computation."""
