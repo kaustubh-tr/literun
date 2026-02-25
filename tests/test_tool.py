@@ -1,191 +1,107 @@
-import sys
+import asyncio
 import os
+import sys
 import unittest
+
+from pydantic import BaseModel
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from literun import Tool, ArgsSchema, ToolRuntime, Agent, ChatOpenAI
-from literun.runner import Runner
+from literun import Tool, ToolRuntime, tool
+from literun.errors import AgentToolCallError
+
+
+class InputSchema(BaseModel):
+    x: int
+
+
+class OutputSchema(BaseModel):
+    result: int
 
 
 class TestToolDefinition(unittest.TestCase):
-    """
-    Unit tests for Tool creation, argument resolution, and schema generation.
-    """
+    def test_from_callable_sync(self):
+        def add(x: int) -> int:
+            return x + 1
 
-    def test_openapi_schema_generation(self):
-        """Verify that a Tool generates the correct OpenAI-compatible JSON schema."""
+        t = Tool.from_callable(add, description="increment")
+        self.assertEqual(t.name, "add")
+        self.assertEqual(t.description, "increment")
+        self.assertIsNotNone(t.func)
+        self.assertIsNone(t.coroutine)
 
-        def dummy_func(a, b=1):
-            return a + b
+    def test_from_callable_async(self):
+        async def add_async(x: int) -> int:
+            return x + 1
 
-        tool = Tool(
-            func=dummy_func,
-            name="dummy",
-            description="A dummy tool",
-            args_schema=[
-                ArgsSchema(name="a", type=int, description="Argument a"),
-                ArgsSchema(name="b", type=int, description="Argument b"),
-            ],
+        t = Tool.from_callable(add_async, name="add_async")
+        self.assertEqual(t.name, "add_async")
+        self.assertIsNone(t.func)
+        self.assertIsNotNone(t.coroutine)
+
+    def test_from_callable_invalid(self):
+        with self.assertRaises(TypeError):
+            Tool.from_callable(123)  # type: ignore[arg-type]
+
+    def test_openai_schema_generation_excludes_runtime(self):
+        def search(query: str, runtime: ToolRuntime) -> str:
+            return f"{query}-{getattr(runtime, 'request_id', 'na')}"
+
+        t = Tool.from_callable(search, name="search")
+        schema = t.to_openai_tool()
+        params = schema["parameters"]["properties"]
+        self.assertIn("query", params)
+        self.assertNotIn("runtime", params)
+
+    def test_sync_run_with_runtime_and_validation(self):
+        def multiply(x: int, runtime: ToolRuntime) -> int:
+            return x * int(getattr(runtime, "factor", 1))
+
+        t = Tool.from_callable(
+            multiply,
+            input_schema=InputSchema,
+            output_schema=OutputSchema,
         )
+        result = t.run({"x": "3"}, runtime_context={"factor": 4})
+        self.assertEqual(result, 12)
 
-        schema = tool.convert_to_openai_tool()
+    def test_invalid_input_raises_agent_tool_call_error(self):
+        def multiply(x: int) -> int:
+            return x * 2
 
-        # Note: The current implementation returns a flat structure with 'type': 'function'
-        # rather than nested {"type": "function", "function": {...}}.
-        self.assertEqual(schema["type"], "function")
-        self.assertEqual(schema["name"], "dummy")
-        self.assertEqual(schema["description"], "A dummy tool")
-
-        props = schema["parameters"]["properties"]
-        self.assertIn("a", props)
-        self.assertIn("b", props)
-        self.assertEqual(props["a"]["type"], "integer")
-
-    def test_argument_resolution_and_coercion(self):
-        """Verify that the tool correctly validates and converts argument types."""
-
-        def add(a, b):
-            return a + b
-
-        tool = Tool(
-            func=add,
-            name="add",
-            description="Adds two numbers",
-            args_schema=[
-                ArgsSchema(name="a", type=int, description="First number"),
-                ArgsSchema(name="b", type=int, description="Second number"),
-            ],
-        )
-
-        # 1. Valid arguments
-        result_valid = tool._resolve_arguments({"a": 1, "b": 2})
-        self.assertEqual(result_valid["a"], 1)
-        self.assertEqual(result_valid["b"], 2)
-
-        # 2. String coercion (e.g. from LLM output)
-        result_coerced = tool._resolve_arguments({"a": "10", "b": "20"})
-        self.assertEqual(result_coerced["a"], 10)
-        self.assertEqual(result_coerced["b"], 20)
-
-    def test_missing_required_argument_error(self):
-        """Verify that missing required arguments raise a ValueError."""
-        tool = Tool(
-            func=lambda a: a,
-            name="test",
-            description="desc",
-            args_schema=[ArgsSchema(name="a", type=int, description="desc")],
-        )
-
-        with self.assertRaises(ValueError):
-            tool._resolve_arguments({})
+        t = Tool.from_callable(multiply, input_schema=InputSchema)
+        with self.assertRaises(AgentToolCallError):
+            t.run({"x": "bad-int"})
 
 
-class TestRuntimeContext(unittest.TestCase):
-    """
-    Unit tests for Runtime Context injection into Tools.
-    """
+class TestToolAsync(unittest.IsolatedAsyncioTestCase):
+    async def test_async_run_with_coroutine(self):
+        async def mul_async(x: int) -> int:
+            return x * 2
 
-    def test_invoke_with_context(self):
-        """Verify explicit context values are injected into the tool."""
+        t = Tool.from_callable(mul_async, input_schema=InputSchema)
+        result = await t.arun({"x": 7})
+        self.assertEqual(result, 14)
 
-        # 1. Define a tool that accepts ToolRuntime
-        def get_user_id(ctx: ToolRuntime) -> str:
-            # Manually extract from context (attribute access)
-            user_id = ctx.user_id
-            return f"User ID is {user_id}"
+    async def test_async_run_falls_back_to_sync(self):
+        def mul_sync(x: int) -> int:
+            return x * 3
 
-        tool = Tool(
-            name="get_user_id",
-            description="Get the current user ID",
-            func=get_user_id,
-            args_schema=[],  # No LLM args
-        )
-
-        agent = Agent(llm=ChatOpenAI(api_key="fake"), tools=[tool])
-
-        # 2. Test execution with runtime_context
-        context = {"user_id": 42}
-
-        # Use Runner directly to bypass LLM call and test tool execution
-        result = Runner._run_tool(agent, "get_user_id", {}, runtime_context=context)
-        self.assertEqual(result, "User ID is 42")
-
-    def test_mixed_args_and_context(self):
-        """Verify tools accepting both arguments and context work correctly."""
-
-        def multiply_by_user_factor(x: int, ctx: ToolRuntime) -> int:
-            factor = getattr(ctx, "factor", 1)
-            return x * factor
-
-        tool = Tool(
-            name="multiply",
-            description="Multiplies by user factor",
-            func=multiply_by_user_factor,
-            args_schema=[ArgsSchema(name="x", type=int, description="Input")],
-        )
-
-        agent = Agent(llm=ChatOpenAI(api_key="fake"), tools=[tool])
-        context = {"factor": 3}
-
-        # Execution
-        result = Runner._run_tool(agent, "multiply", {"x": 10}, runtime_context=context)
-        self.assertEqual(result, "30")
-
-    def test_missing_context_arg(self):
-        """Verify that missing context defaults gracefully (e.g. empty runtime)."""
-
-        def check_presence(ctx: ToolRuntime) -> str:
-            if hasattr(ctx, "secret"):
-                return "Found"
-            return "Not found"
-
-        tool = Tool(
-            name="check",
-            description="Check secret",
-            func=check_presence,
-            args_schema=[],
-        )
-        agent = Agent(llm=ChatOpenAI(api_key="fake"), tools=[tool])
-
-        # Pass None as context -> Runner should provide an empty ToolRuntime
-        result = Runner._run_tool(agent, "check", {}, runtime_context=None)
-        self.assertEqual(result, "Not found")
+        t = Tool.from_callable(mul_sync, input_schema=InputSchema)
+        result = await t.arun({"x": 5})
+        self.assertEqual(result, 15)
 
 
-class TestFutureAnnotations(unittest.TestCase):
-    """
-    Verify compatibility with 'from __future__ import annotations'.
-    This is critical because it changes how type hints are evaluated at runtime.
-    """
+class TestToolDecorator(unittest.TestCase):
+    def test_tool_decorator(self):
+        @tool(name="echo")
+        def echo(text: str) -> str:
+            return text
 
-    def test_toolruntime_with_future_annotations(self):
-        """Verify ToolRuntime injection works when using from __future__ import annotations."""
-
-        # Define a tool that uses ToolRuntime with future annotations enabled
-        def get_config_value(key: str, ctx: ToolRuntime) -> str:
-            value = getattr(ctx, key, "not found")
-            return f"Config {key} = {value}"
-
-        tool = Tool(
-            name="get_config",
-            description="Get a config value",
-            func=get_config_value,
-            args_schema=[ArgsSchema(name="key", type=str, description="Config key")],
-        )
-
-        agent = Agent(llm=ChatOpenAI(api_key="fake"), tools=[tool])
-
-        # Execute the tool with runtime context
-        result = Runner._run_tool(
-            agent,
-            "get_config",
-            {"key": "db_host"},
-            runtime_context={"db_host": "localhost"},
-        )
-
-        self.assertEqual(result, "Config db_host = localhost")
+        self.assertIsInstance(echo, Tool)
+        self.assertEqual(echo.name, "echo")
+        self.assertEqual(echo.run({"text": "hi"}), "hi")
 
 
 if __name__ == "__main__":

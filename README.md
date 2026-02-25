@@ -5,18 +5,17 @@
 [![PyPI - License](https://img.shields.io/pypi/l/literun)](https://opensource.org/licenses/MIT)
 [![Documentation](https://img.shields.io/badge/docs-DOCS-blue)](https://github.com/kaustubh-tr/literun/blob/main/DOCS.md)
 
-A lightweight, flexible Python framework for building custom OpenAI agents (Responses API) with tool support and structured prompt management.
+A lightweight, production-grade Python framework for building predictable, multi-turn AI agents. LiteRun standardizes the chaotic mechanics of modern LLM APIs (like tool-loop continuation, JSON stream assembly, and token accounting) while giving you absolute control over execution and state.
 
-## Features
+*Currently supports **OpenAI Responses API**.*
 
-- **Custom Agent Execution**: Control the loop with synchronous and streaming support.
-- **Tool Support**: Easy registration with Pydantic-powered validation.
-- **Type Safety**: Built for modern Python 3.10+ environments.
-- **Async & Sync**: Standard synchronous methods (`invoke`/`stream`) and full `asyncio` support (`ainvoke`/`astream`).
-- **Prompt Templates**: Structured message management.
-- **Event-Driven**: Granular control via a rich event system.
+## Key Features
 
-For detailed documentation on Architecture, Streaming, and Advanced Configuration, see [DOCS.md](https://github.com/kaustubh-tr/literun/blob/main/DOCS.md).
+- **Standardized Execution**: A symmetric API for `run()`, `arun()`, `stream()`, and `astream()` with normalized result/event schemas for supported provider behavior.
+- **Structured Tooling Runtime**: Pydantic-powered schema generation, execution routing, and output validation.
+- **Secure Context Injection**: Safely pass ephemeral app state (like DB connections or Tenant IDs) into tools via `ToolRuntime` without exposing it to the LLM.
+- **OpenAI-Focused Token Accounting**: Exposes explicit `cached_read`, `reasoning`, and standard token buckets when usage data is available.
+- **Canonical Prompting**: A strictly typed `PromptTemplate` builder that enforces message invariants before network execution.
 
 ## Requirements
 
@@ -26,104 +25,65 @@ For detailed documentation on Architecture, Streaming, and Advanced Configuratio
 
 ## Installation
 
-You can install `literun` directly from PyPI:
+Install `literun` directly from PyPI. 
 
 ```bash
 pip install literun
 ```
 
+Set your API key in your environment:
+
+```bash
+export OPENAI_API_KEY="sk-proj-..."
+```
+
 ## Quick Start
 
-### Basic Agent
-
-Here is a simple example of how to create an agent with a custom tool.
+Here is a simple example demonstrating how to initialize an Agent, register a Tool using Pydantic schemas, and execute a synchronous run.
 
 ```python
-import os
-from literun import Agent, ChatOpenAI, Tool, ArgsSchema
+from literun import Agent, ChatOpenAI, Tool
+from pydantic import BaseModel, Field
 
-# 1. Define a tool function
+# 1. Define the tool's input schema for strict validation
+class WeatherInput(BaseModel):
+    location: str = Field(description="The city and state, e.g. San Francisco, CA")
+    unit: str = Field(default="celsius", description="The unit of temperature")
+
+# 2. Define the Python logic
 def get_weather(location: str, unit: str = "celsius") -> str:
-    return f"The weather in {location} is 25 degrees {unit}."
+    return f"The weather in {location} is 22 degrees {unit}."
 
-# 2. Wrap it with Tool schema
+# 3. Wrap it in a LiteRun Tool
 weather_tool = Tool(
     func=get_weather,
     name="get_weather",
-    description="Get the weather for a location",
-    args_schema=[
-        ArgsSchema(
-            name="location",
-            type=str,
-            description="The city and state, e.g. San Francisco, CA",
-        ),
-        ArgsSchema(
-            name="unit",
-            type=str,
-            description="The unit of temperature",
-            enum=["celsius", "fahrenheit"],
-        ),
-    ],
+    description="Get the current weather for a specific location.",
+    input_schema=WeatherInput,
+    strict=True # Enforces stricter OpenAI schema adherence (model/provider dependent)
 )
 
-# 3. Initialize Agent
+# 4. Initialize the Agent Orchestrator
 agent = Agent(
-    llm=ChatOpenAI(model="gpt-4.1-mini", temperature=0.7),
-    system_prompt="You are a helpful assistant.",
+    llm=ChatOpenAI(model="gpt-5-nano"),
+    system_instruction="You are a helpful and concise weather assistant.",
     tools=[weather_tool],
 )
 
-# 4. Run the Agent
-result = agent.invoke(user_input="What is the weather in Tokyo?")
-print(f"Final Answer: {result.final_output}")
+# 5. Execute the Run
+result = agent.run("What is the weather in Tokyo?")
+
+print(f"Response: {result.output}")
+print(f"Usage: {result.token_usage}")
+print(f"Execution Time: {result.timing.duration:.2f}s")
+
 ```
 
-### Advanced Usage
+### Advanced Usage & Examples
 
-LiteRun supports **Streaming**, **Runtime Context Injection** (for secrets), and **Direct LLM Usage**.
+LiteRun supports sync/async execution in both non-streaming and streaming modes, plus runtime context injection and direct LLM client usage.
 
 👉 Check out the [Documentation](https://github.com/kaustubh-tr/literun/blob/main/DOCS.md) and [Examples](https://github.com/kaustubh-tr/literun/blob/main/examples/) for more details.
-
-## Project Structure
-
-```text
-literun/
-├── src/
-│   └── literun/          # Main package source
-│       ├── agent.py      # Agent orchestrator
-│       ├── llm.py        # ChatOpenAI wrapper
-│       ├── tool.py       # Tool & Schema definitions
-│       └── ...
-├── tests/                # Unit tests (agent, llm, tools, prompts)
-├── examples/             # Runnable examples
-├── DOCS.md               # Detailed documentation
-├── LICENSE               # MIT License
-├── README.md             # This file
-└── pyproject.toml        # Project configuration & dependencies
-```
-
-## Contributing
-
-We welcome contributions! Please follow these steps to set up your development environment:
-
-1.  **Fork** the repository and clone it locally:
-
-    ```bash
-    git clone https://github.com/kaustubh-tr/literun.git
-    cd literun
-    ```
-
-2.  **Install** in editable mode with development dependencies:
-
-    ```bash
-    pip install -e .[dev]
-    ```
-
-3.  **Create** a feature branch and make your changes.
-
-4.  **Test** your changes (see below).
-
-5.  **Submit** a pull request.
 
 ## Testing
 
@@ -131,7 +91,7 @@ This project uses `pytest` as the primary test runner, but supports `unittest` a
 
 ```bash
 # Run all tests
-pytest
+python -m pytest
 ```
 
 or using unittest:
@@ -140,7 +100,7 @@ or using unittest:
 python -m unittest discover tests
 ```
 
-> **Note**: Some integration tests require the `OPENAI_API_KEY` environment variable. They are automatically skipped if it is missing.
+> **Note**: Some integration tests may require the `OPENAI_API_KEY` environment variable. They are automatically skipped if it is missing.
 
 ## License
 

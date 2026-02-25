@@ -1,43 +1,53 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
 
-# Ensure the package is importable
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+# Make local package importable when running this file directly.
+sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
 from literun import ChatOpenAI
 
 
-async def main():
+async def main() -> None:
     if not os.getenv("OPENAI_API_KEY"):
-        print("Please set OPENAI_API_KEY environment variable.")
+        print("Please set OPENAI_API_KEY.")
         return
 
-    # 1. Configure your llm
-    # It supports both sync (invoke/stream) and async (ainvoke/astream) methods
-    llm = ChatOpenAI(
-        model="gpt-4.1-mini",
-        temperature=0.7,
-        timeout=10,
-        max_output_tokens=1000,
+    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models don't support temperature.
+
+    messages = llm.normalize_messages(
+        [{"role": "user", "content": "Write a 2-line poem about recursion."}]
     )
 
-    # 2. Run llm asynchronously without streaming
-    print("\n--- 1. Simple Async Invocation ---")
-    messages = [{"role": "user", "content": "Tell me a haiku about recursion."}]
-    response = await llm.ainvoke(messages)
+    print("\n=== Async Non-streaming ===")
+    response = await llm.agenerate(
+        messages=messages,
+        system_instruction="You are concise.",
+        stream=False,
+        tools=None,
+        tool_choice=None,
+        parallel_tool_calls=None,
+    )
+    response_adapter = llm.get_response_adapter()
+    print("Assistant:", response_adapter.extract_text(response))
+    print("\nUsage:", response_adapter.extract_token_usage(response))
 
-    print(f"Response:\n{response.output_text}")
-
-    # 3. Run llm asynchronously with streaming
-    print("\n--- 2. Async Streaming ---")
-    stream_messages = [{"role": "user", "content": "Count from 1 to 5 slowly."}]
-    print("Streaming Response: ", end="", flush=True)
-
-    async for event in llm.astream(messages=stream_messages):
-        if event.type == "response.output_text.delta":
+    print("\n=== Async Streaming ===")
+    stream = await llm.agenerate(
+        messages=messages,
+        system_instruction="You are a helpful assistant.",
+        stream=True,
+        tools=None,
+        tool_choice=None,
+        parallel_tool_calls=None,
+    )
+    stream_adapter = llm.get_stream_adapter()
+    print("Assistant: ", end="", flush=True)
+    async for event in stream_adapter.aprocess_stream(stream):
+        if event.type == "message.output.delta" and isinstance(event.delta, str):
             print(event.delta, end="", flush=True)
-    print("\n")
+    print()
 
 
 if __name__ == "__main__":
