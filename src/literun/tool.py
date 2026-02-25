@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import inspect
-import logging
+import warnings
 import asyncio
 from typing import Any, get_type_hints
 from collections.abc import Awaitable, Callable
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from .errors import AgentToolExecutionError, AgentToolCallError
-
-logger = logging.getLogger(__name__)
 
 
 class ToolRuntime(BaseModel):
@@ -120,8 +118,8 @@ class Tool(BaseModel):
         """Map a Python type annotation to its JSON Schema type string.
 
         Supports ``str``, ``int``, ``float``, ``bool``, ``list``, and ``dict``.
-        Any other type falls back to ``"string"`` and emits a ``WARNING`` so that
-        unexpected annotations are visible during development.
+        Any other type falls back to ``"string"`` and emits a :class:`UserWarning` so
+        that unexpected annotations are visible during development.
         """
         PYTHON_TO_JSON_SCHEMA = {
             str: "string",
@@ -133,10 +131,10 @@ class Tool(BaseModel):
         }
         json_type = PYTHON_TO_JSON_SCHEMA.get(py_type)
         if json_type is None:
-            logger.warning(
-                "Unsupported type annotation %r in tool %r; falling back to 'string'.",
-                py_type,
-                self.name,
+            warnings.warn(
+                f"Unsupported type annotation {py_type!r} in tool {self.name!r};"
+                " falling back to 'string'.",
+                stacklevel=2,
             )
             return "string"
         return json_type
