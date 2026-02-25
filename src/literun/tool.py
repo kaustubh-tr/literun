@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 import asyncio
 from typing import Any, get_type_hints
 from collections.abc import Awaitable, Callable
@@ -131,6 +130,7 @@ class Tool(BaseModel):
         }
         json_type = PYTHON_TO_JSON_SCHEMA.get(py_type)
         if json_type is None:
+            import warnings
             warnings.warn(
                 f"Unsupported type annotation {py_type!r} in tool {self.name!r};"
                 " falling back to 'string'.",
