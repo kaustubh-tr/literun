@@ -233,21 +233,23 @@ class OpenAIStreamAdapter(StreamAdapter, AdapterMixin):
         if usage is None:
             return None
 
-        cached_tokens = (
+        total_input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+        total_output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+        cached_tokens = int(
             getattr(usage.input_tokens_details, "cached_tokens", 0)
             if hasattr(usage, "input_tokens_details") and usage.input_tokens_details
             else 0
         )
-        reasoning_tokens = (
+        reasoning_tokens = int(
             getattr(usage.output_tokens_details, "reasoning_tokens", 0)
             if hasattr(usage, "output_tokens_details") and usage.output_tokens_details
             else 0
         )
         return TokenUsage(
-            input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
-            output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
-            cached_read_tokens=int(cached_tokens or 0),
-            reasoning_tokens=int(reasoning_tokens or 0),
+            input_tokens=max(total_input_tokens - cached_tokens, 0),
+            output_tokens=max(total_output_tokens - reasoning_tokens, 0),
+            cached_read_tokens=cached_tokens,
+            reasoning_tokens=reasoning_tokens,
             total_tokens=getattr(usage, "total_tokens", None),
         )
 

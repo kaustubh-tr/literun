@@ -34,23 +34,51 @@ class ChatOpenAI(BaseLLM):
     """OpenAI provider using Responses API."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
     model: str = _DEFAULT_OPENAI_MODEL
+    """OpenAI Responses model id (for example: ``gpt-5-nano``)."""
+
     api_key: str | None = None
+    """OpenAI API key; if omitted, reads ``OPENAI_API_KEY`` from environment."""
+
     organization: str | None = None
+    """Optional organization id sent to the OpenAI SDK client."""
+
     project: str | None = None
+    """Optional project id sent to the OpenAI SDK client."""
+
     base_url: str | None = None
-    reasoning_effort: (
-        Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None
-    ) = None
+    """Custom API base URL for OpenAI-compatible gateways/proxies."""
+
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None = None
+    """Reasoning effort mapped to ``reasoning.effort`` in Responses API payload."""
+
     reasoning_summary: Literal["auto", "concise", "detailed"] | None = None
+    """Reasoning summary mode mapped to ``reasoning.summary``."""
+
     verbosity: Literal["low", "medium", "high"] | None = None
+    """Output verbosity mapped to ``text.verbosity`` when provided."""
+
     text_format: Literal["text", "json_object", "json_schema"] = "text"
+    """Output format mode for ``text.format`` (plain text or structured JSON)."""
+
     response_format: object | None = None
+    """Schema/config object used when ``text_format='json_schema'``."""
+
     tool_choice: Literal["auto", "any", "none", "required"] = "auto"
+    """Default tool policy when tools are present in a request."""
+
     max_retries: int = DEFAULT_MAX_RETRIES
+    """OpenAI SDK retry count for transient request failures."""
+
     store: bool = False
+    """Whether to set ``store`` in Responses API requests."""
+
     client: Any = Field(default=None, exclude=True)
+    """Internal sync OpenAI SDK client instance (not serialized)."""
+
     aclient: Any = Field(default=None, exclude=True)
+    """Internal async OpenAI SDK client instance (not serialized)."""
 
     @model_validator(mode="after")
     def _init_client(self) -> Any:
@@ -179,6 +207,7 @@ class ChatOpenAI(BaseLLM):
                         )
                     item: dict[str, Any] = {
                         "type": "reasoning",
+                        "id": block.reasoning_id,
                         "summary": [{"type": "summary_text", "text": block.summary}],
                     }
                     if block.signature is not None:
