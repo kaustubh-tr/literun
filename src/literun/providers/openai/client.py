@@ -80,6 +80,11 @@ class ChatOpenAI(BaseLLM):
     aclient: Any = Field(default=None, exclude=True)
     """Internal async OpenAI SDK client instance (not serialized)."""
 
+    @property
+    def provider(self) -> str:
+        """OpenAI provider name."""
+        return "openai"
+
     @model_validator(mode="after")
     def _init_client(self) -> Any:
         """Initialize the OpenAI clients."""
@@ -125,6 +130,7 @@ class ChatOpenAI(BaseLLM):
         self,
         messages: str | list[dict[str, Any]] | PromptTemplate,
     ) -> list[dict[str, Any]]:
+        """Normalize messages into OpenAI Responses format."""
         if isinstance(messages, PromptTemplate):
             return self._serialize_prompt(messages.to_messages())
 
@@ -236,6 +242,7 @@ class ChatOpenAI(BaseLLM):
         tool_choice: str | None,
         parallel_tool_calls: bool | None,
     ) -> dict[str, Any]:
+        """Prepare request parameters for OpenAI Responses API calls."""
         params = {
             "model": self.model,
             "temperature": self.temperature,
@@ -271,6 +278,7 @@ class ChatOpenAI(BaseLLM):
         return params
 
     def _map_provider_exception(self, exc: Exception) -> LLMError:
+        """Map OpenAI SDK exceptions to literun LLMError types."""
         context = {"provider": "openai", "model": self.model}
         error_message = str(exc)
         import openai
@@ -297,6 +305,7 @@ class ChatOpenAI(BaseLLM):
         tool_choice: str | None,
         parallel_tool_calls: bool | None,
     ) -> Any:
+        """Generate a response from the OpenAI."""
         params = self._prepare_request_params(
             messages=messages,
             system_instruction=system_instruction,
@@ -322,6 +331,7 @@ class ChatOpenAI(BaseLLM):
         tool_choice: str | None,
         parallel_tool_calls: bool | None,
     ) -> Any:
+        """Generate a response from the OpenAI asynchronously."""
         params = self._prepare_request_params(
             messages=messages,
             system_instruction=system_instruction,
@@ -339,19 +349,25 @@ class ChatOpenAI(BaseLLM):
             raise mapped from exc
 
     def close(self):
+        """Close the OpenAI client connection."""
         self.client.close()
 
     async def aclose(self):
+        """Close the async OpenAI client connection."""
         return await self.aclient.close()
 
     def __enter__(self) -> ChatOpenAI:
+        """Enter context and return self."""
         return self
 
     def __exit__(self, *exc) -> None:
+        """Exit context and close client connection."""
         self.close()
 
     async def __aenter__(self) -> ChatOpenAI:
+        """Enter async context and return self."""
         return self
 
     async def __aexit__(self, *exc) -> None:
+        """Exit async context and close async client connection."""
         await self.aclose()
