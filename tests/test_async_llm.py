@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import warnings
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -18,6 +19,19 @@ try:
     HAS_OPENAI_SDK = True
 except Exception:
     HAS_OPENAI_SDK = False
+
+try:
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Interactions usage is experimental and may change in future versions.",
+            category=UserWarning,
+        )
+        from literun.providers.gemini.client import ChatGemini
+
+    HAS_GEMINI_SDK = True
+except Exception:
+    HAS_GEMINI_SDK = False
 
 
 class TestAsyncBaseLLMBehavior(unittest.IsolatedAsyncioTestCase):
@@ -43,14 +57,37 @@ class TestAsyncBaseLLMBehavior(unittest.IsolatedAsyncioTestCase):
 class TestAsyncChatOpenAI(unittest.IsolatedAsyncioTestCase):
     async def test_aclose(self):
         llm = ChatOpenAI(model="gpt-5-nano", api_key="test-key")
+        self.assertEqual(llm.provider, "openai")
         await llm.aclose()
 
     async def test_async_context_manager(self):
         async with ChatOpenAI(model="gpt-5-nano", api_key="test-key") as llm:
             self.assertIsInstance(llm, ChatOpenAI)
+            self.assertEqual(llm.provider, "openai")
 
     async def test_prompt_normalization_still_sync_safe(self):
         llm = ChatOpenAI(model="gpt-5-nano", api_key="test-key")
+        prompt = PromptTemplate().add_user("hello")
+        normalized = llm.normalize_messages(prompt)
+        self.assertTrue(isinstance(normalized, list))
+        self.assertEqual(normalized[0]["role"], "user")
+        await llm.aclose()
+
+
+@unittest.skipUnless(HAS_GEMINI_SDK, "gemini sdk not installed")
+class TestAsyncChatGemini(unittest.IsolatedAsyncioTestCase):
+    async def test_aclose(self):
+        llm = ChatGemini(model="gemini-3-flash-preview", api_key="test-key")
+        self.assertEqual(llm.provider, "gemini")
+        await llm.aclose()
+
+    async def test_async_context_manager(self):
+        async with ChatGemini(model="gemini-3-flash-preview", api_key="test-key") as llm:
+            self.assertIsInstance(llm, ChatGemini)
+            self.assertEqual(llm.provider, "gemini")
+
+    async def test_prompt_normalization_still_sync_safe(self):
+        llm = ChatGemini(model="gemini-3-flash-preview", api_key="test-key")
         prompt = PromptTemplate().add_user("hello")
         normalized = llm.normalize_messages(prompt)
         self.assertTrue(isinstance(normalized, list))

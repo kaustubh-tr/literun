@@ -114,6 +114,10 @@ class FakeLLM(BaseLLM):
     scripted_responses: list[dict[str, Any]] = Field(default_factory=list)
     scripted_streams: list[list[StreamEvent]] = Field(default_factory=list)
 
+    @property
+    def provider(self) -> str:
+        return "fake"
+
     def generate(
         self,
         messages: list[dict[str, Any]],
