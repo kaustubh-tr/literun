@@ -6,7 +6,9 @@ from pathlib import Path
 # Make local package importable when running this file directly.
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from literun import Agent, ChatOpenAI, Tool, tool
+from literun import Agent, Tool, tool
+from literun.providers import ChatOpenAI
+# from literun.providers import ChatGemini  # uncomment for Gemini models
 
 
 @tool(name="get_weather")
@@ -22,11 +24,17 @@ def calculator(a: int, b: int) -> int:
 
 
 async def main() -> None:
-    if not os.getenv("OPENAI_API_KEY"):
+    # Toggle provider by commenting/uncommenting the block below.
+    llm = ChatOpenAI(model="gpt-5-nano")  # for OpenAI models
+    # llm = ChatGemini(model="gemini-3-flash-preview")  # for Gemini models
+    
+    if llm.provider == "openai" and not os.getenv("OPENAI_API_KEY"):
         print("Please set OPENAI_API_KEY.")
         return
+    if llm.provider == "gemini" and not os.getenv("GOOGLE_API_KEY"):
+        print("Please set GOOGLE_API_KEY.")
+        return
 
-    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models don't support temperature.
     calc_tool = Tool.from_callable(calculator, name="calculator")
 
     agent = Agent(
@@ -38,17 +46,17 @@ async def main() -> None:
         max_iterations=10,
     )
 
-    print("\n=== Async run (weather tool) ===")
+    print(f"\n=== Async run (weather tool) ({llm.provider}) ===")
     result = await agent.arun("What is the weather in Mumbai?")
     print("Output:", result.output)
     print("\nUsage:", result.token_usage)
 
-    print("\n=== Async run (calculator tool) ===")
+    print(f"\n=== Async run (calculator tool) ({llm.provider}) ===")
     result = await agent.arun("Calculate 50 + 100")
     print("Output:", result.output)
     print("\nUsage:", result.token_usage)
 
-    print("\n=== Async stream ===")
+    print(f"\n=== Async stream ({llm.provider}) ===")
     async for event in agent.astream("Tell me a short joke about async programming."):
         if event.event.type == "message.output.delta" and isinstance(
             getattr(event.event, "delta", None), str
