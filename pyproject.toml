@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "literun"
-version = "0.3.0"
+version = "0.3.1"
 description = "A Minimal agent runtime built on OpenAI Responses API"
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
