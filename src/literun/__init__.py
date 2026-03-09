@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .agent import Agent
-from .providers import ChatOpenAI
+from .providers import ChatOpenAI, ChatGemini
 from .tool import Tool, ToolRuntime, tool
 from .prompt import PromptTemplate
 from .message import (
@@ -49,6 +49,7 @@ from .errors import (
 __all__ = [
     "Agent",
     "ChatOpenAI",
+    "ChatGemini",
     "Tool",
     "ToolRuntime",
     "tool",
@@ -90,4 +91,4 @@ __all__ = [
     "InvalidRequestError",
 ]
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
