@@ -7,42 +7,60 @@
 
 A lightweight, production-grade Python framework for building predictable, multi-turn AI agents. LiteRun standardizes the chaotic mechanics of modern LLM APIs (like tool-loop continuation, JSON stream assembly, and token accounting) while giving you absolute control over execution and state.
 
-*Currently supports **OpenAI Responses API**.*
+*Currently supports **OpenAI Responses API** and **Google Gemini Interactions API**.*
 
 ## Key Features
 
 - **Standardized Execution**: A symmetric API for `run()`, `arun()`, `stream()`, and `astream()` with normalized result/event schemas for supported provider behavior.
 - **Structured Tooling Runtime**: Pydantic-powered schema generation, execution routing, and output validation.
 - **Secure Context Injection**: Safely pass ephemeral app state (like DB connections or Tenant IDs) into tools via `ToolRuntime` without exposing it to the LLM.
-- **OpenAI-Focused Token Accounting**: Exposes explicit `cached_read`, `reasoning`, and standard token buckets when usage data is available.
+- **Multi-Provider Runtime**: Provider-specific clients and adapters for OpenAI and Gemini behind a shared LiteRun orchestration contract.
+- **Normalized Token Accounting**: Exposes explicit `cached_read`, `reasoning`, `tool_use`, and standard token buckets when usage data is available.
 - **Canonical Prompting**: A strictly typed `PromptTemplate` builder that enforces message invariants before network execution.
 
 ## Requirements
 
 - Python 3.10+
 
-> **Note**: Core dependencies like `openai` and `pydantic` are automatically installed when you install `literun`.
+> **Note**: Provider SDKs are installed via extras. Install the provider you want to use.
 
 ## Installation
 
-Install `literun` directly from PyPI. 
+Install LiteRun with the provider extra you need.
 
 ```bash
-pip install literun
+pip install "literun[openai]"
 ```
 
-Set your API key in your environment:
+For Gemini:
+
+```bash
+pip install "literun[gemini]"
+```
+
+For both supported providers:
+
+```bash
+pip install "literun[all]"
+```
+
+Set the matching API key in your environment:
 
 ```bash
 export OPENAI_API_KEY="sk-proj-..."
 ```
 
+```bash
+export GOOGLE_API_KEY="your-google-api-key"
+```
+
 ## Quick Start
 
-Here is a simple example demonstrating how to initialize an Agent, register a Tool using Pydantic schemas, and execute a synchronous run.
+Here is a simple example demonstrating how to initialize an Agent, register a Tool using Pydantic schemas, and execute a synchronous run with OpenAI. The same agent surface works with Gemini by swapping the client.
 
 ```python
 from literun import Agent, ChatOpenAI, Tool
+# from literun.providers import ChatGemini
 from pydantic import BaseModel, Field
 
 # 1. Define the tool's input schema for strict validation
@@ -66,6 +84,7 @@ weather_tool = Tool(
 # 4. Initialize the Agent Orchestrator
 agent = Agent(
     llm=ChatOpenAI(model="gpt-5-nano"),
+    # llm=ChatGemini(model="gemini-3-flash-preview"),
     system_instruction="You are a helpful and concise weather assistant.",
     tools=[weather_tool],
 )
@@ -81,7 +100,7 @@ print(f"Execution Time: {result.timing.duration:.2f}s")
 
 ### Advanced Usage & Examples
 
-LiteRun supports sync/async execution in both non-streaming and streaming modes, plus runtime context injection and direct LLM client usage.
+LiteRun supports sync/async execution in both non-streaming and streaming modes, plus runtime context injection and direct LLM client usage. The example scripts in `examples/` use comment toggles so you can switch between OpenAI and Gemini quickly.
 
 👉 Check out the [Documentation](https://github.com/kaustubh-tr/literun/blob/main/DOCS.md) and [Examples](https://github.com/kaustubh-tr/literun/blob/main/examples/) for more details.
 
@@ -100,7 +119,8 @@ or using unittest:
 python -m unittest discover tests
 ```
 
-> **Note**: Some integration tests may require the `OPENAI_API_KEY` environment variable. They are automatically skipped if it is missing.
+> **Note**: Some integration tests may require the provider api-key environment variable. They are automatically skipped if it is missing.
+> Provider-specific tests require the matching provider SDK extra and API key.
 
 ## License
 
