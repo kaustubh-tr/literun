@@ -28,16 +28,19 @@ def search_database(query: str, limit: int, runtime: ToolRuntime) -> str:
 
 
 def main() -> None:
-    # Toggle provider by commenting/uncommenting the block below.
-    llm = ChatOpenAI(model="gpt-5-nano")  # for OpenAI models
-    # llm = ChatGemini(model="gemini-3-flash-preview")  # for Gemini models
+    # Toggle provider by commenting/uncommenting one of the blocks below.
 
-    if llm.provider == "openai" and not os.getenv("OPENAI_API_KEY"):
+    # --- OpenAI provider ---
+    if not os.getenv("OPENAI_API_KEY"):
         print("Please set OPENAI_API_KEY.")
         return
-    if llm.provider == "gemini" and not os.getenv("GOOGLE_API_KEY"):
-        print("Please set GOOGLE_API_KEY.")
-        return
+    llm = ChatOpenAI(model="gpt-5-nano")
+
+    # --- Gemini provider (uncomment below and comment out the OpenAI block above) ---
+    # if not os.getenv("GOOGLE_API_KEY"):
+    #     print("Please set GOOGLE_API_KEY.")
+    #     return
+    # llm = ChatGemini(model="gemini-3-flash-preview")
 
     weather_tool = Tool.from_callable(get_weather, name="get_weather")
     search_tool = Tool.from_callable(search_database, name="search_database")
