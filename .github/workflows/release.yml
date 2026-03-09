@@ -97,13 +97,13 @@ jobs:
       - name: Verify Installation
         # Detailed verification similar to professional workflows
         run: |
-          # Install from test PyPI, fallback to PyPI for deps
+          # Install package from TestPyPI and resolve optional provider extras from PyPI.
           pip install --index-url https://test.pypi.org/simple/ \
                       --extra-index-url https://pypi.org/simple/ \
-                      literun==${{ inputs.version }}
+                      "literun[all]==${{ inputs.version }}"
           
-          # Verify import and version
-          python -c "import literun; print(f'Successfully installed literun {literun.__version__}')"
+          # Verify core package plus supported provider clients.
+          python -c "import literun; from literun.providers import ChatOpenAI, ChatGemini; print(f'Successfully installed literun {literun.__version__} with {ChatOpenAI.__name__} and {ChatGemini.__name__}')"
 
   publish-pypi:
     name: Publish to PyPI
@@ -144,5 +144,5 @@ jobs:
 
       - name: Verify PyPI Install
         run: |
-          pip install literun==${{ inputs.version }}
-          python -c "import literun; print(f'PyPI install successful: {literun.__version__}')"
+          pip install "literun[all]==${{ inputs.version }}"
+          python -c "import literun; from literun.providers import ChatOpenAI, ChatGemini; print(f'PyPI install successful: {literun.__version__} with {ChatOpenAI.__name__} and {ChatGemini.__name__}')"
