@@ -1,7 +1,6 @@
 import os
 import sys
 import unittest
-import warnings
 
 # Add the project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -21,16 +20,11 @@ except Exception:
     HAS_OPENAI_SDK = False
 
 try:
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="Interactions usage is experimental and may change in future versions.",
-            category=UserWarning,
-        )
-        from literun.providers.gemini.client import ChatGemini
+    import google.genai  # noqa: F401
+    from literun.providers.gemini.client import ChatGemini
 
     HAS_GEMINI_SDK = True
-except Exception:
+except ImportError:
     HAS_GEMINI_SDK = False
 
 
