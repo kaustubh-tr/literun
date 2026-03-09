@@ -79,7 +79,7 @@ class OpenAIResponseAdapter(ResponseAdapter, AdapterMixin):
 
         return tool_calls
 
-    def extract_token_usage(self, response) -> TokenUsage:
+    def extract_token_usage(self, response) -> TokenUsage | None:
         """Extract token usage from OpenAI response."""
         usage = getattr(response, "usage", None)
         if usage:
@@ -204,7 +204,7 @@ class OpenAIResponseAdapter(ResponseAdapter, AdapterMixin):
                     ReasoningItem(
                         id=getattr(item, "id", None),
                         signature=getattr(item, "encrypted_content", None),
-                        summary=getattr(item, "summary", None),
+                        summary=self._normalize_reasoning_summary(getattr(item, "summary", None)),
                         raw_item=item,
                     )
                 )

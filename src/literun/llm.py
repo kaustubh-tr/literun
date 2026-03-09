@@ -30,6 +30,12 @@ class BaseLLM(ABC, BaseModel):
     model_kwargs: dict[str, Any] = Field(default_factory=dict)
     """Additional keyword arguments to pass to the LLM model."""
 
+    @property
+    @abstractmethod
+    def provider(self) -> str:
+        """Name of the LLM provider"""
+        ...
+
     @abstractmethod
     def generate(
         self,

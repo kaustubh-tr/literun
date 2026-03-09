@@ -4,7 +4,7 @@ Welcome to the official documentation for **LiteRun**, a lightweight, production
 
 This document is written as a comprehensive narrative guide. It is designed to be read front-to-back, equipping you with the deep architectural understanding required to design, execute, debug, and productionize LiteRun-based workflows.
 
-> **Current Scope Notice:** This edition of the documentation focuses exclusively on the **OpenAI Responses API** as the primary execution engine. While LiteRun's internal architecture is fundamentally multi-provider, specific details regarding Gemini and Anthropic implementations are reserved for future work and are omitted from this phase.
+> **Current Scope Notice:** This edition of the documentation covers the two currently implemented providers in LiteRun: the **OpenAI Responses API** and the **Google Gemini Interactions API**. Anthropic remains future work in this document and is intentionally described only at a roadmap level.
 
 > **Documentation Quality Notice:** This documentation was drafted with AI assistance and reviewed by maintainers. It may still contain mistakes or stale details.  
 > If you find an issue, please open a documentation issue at:  
@@ -24,7 +24,7 @@ This document is written as a comprehensive narrative guide. It is designed to b
 1. [Why LiteRun Exists](#1-why-literun-exists)
 2. [Core Concepts at a Glance](#2-core-concepts-at-a-glance)
    * [2.1 The Agent](#21-the-agent)
-   * [2.2 The LLM Provider Client (ChatOpenAI)](#22-the-llm-provider-client-chatopenai)
+   * [2.2 The LLM Provider Clients (ChatOpenAI, ChatGemini)](#22-the-llm-provider-clients-chatopenai-chatgemini)
    * [2.3 The Tool](#23-the-tool)
    * [2.4 PromptTemplate and Canonical Messages](#24-prompttemplate-and-canonical-messages)
    * [2.5 The Run Schemas](#25-the-run-schemas)
@@ -41,7 +41,7 @@ This document is written as a comprehensive narrative guide. It is designed to b
    * [4.2 Execution Methods](#42-execution-methods)
    * [4.3 The messages Input Argument](#43-the-messages-input-argument)
    * [4.4 The runtime_context Dependency Injection](#44-the-runtime_context-dependency-injection)
-5. [Public API: ChatOpenAI](#5-public-api-chatopenai)
+5. [Public API: Provider Clients](#5-public-api-provider-clients)
    * [5.1 Standard Configuration Parameters](#51-standard-configuration-parameters)
    * [5.2 Advanced Responses API Parameters](#52-advanced-responses-api-parameters)
    * [5.3 Internal Method Lifecycle](#53-internal-method-lifecycle)
@@ -85,12 +85,15 @@ This document is written as a comprehensive narrative guide. It is designed to b
     * [11.6 End Semantics and Multi-Turn Loops](#116-end-semantics-and-multi-turn-loops)
 12. [Token Usage Model in Detail](#12-token-usage-model-in-detail)
     * [12.1 Conceptual Meaning of Each Field](#121-conceptual-meaning-of-each-field)
-    * [12.2 The OpenAI Mapping Rationale (Unblending)](#122-the-openai-mapping-rationale-unblending)
+    * [12.2 Provider Token Mapping Rationale](#122-provider-token-mapping-rationale)
     * [12.3 The Timing Schema](#123-the-timing-schema)
-13. [OpenAI-Specific Behavior and Mapping](#13-openai-specific-behavior-and-mapping)
-    * [13.1 Message Normalization](#131-message-normalization)
-    * [13.2 Reasoning Replay Expectations](#132-reasoning-replay-expectations)
-    * [13.3 Stream Tool-Call Correlation](#133-stream-tool-call-correlation)
+13. [Provider-Specific Behavior and Mapping](#13-provider-specific-behavior-and-mapping)
+    * [13.1 OpenAI Message Normalization](#131-openai-message-normalization)
+    * [13.2 OpenAI Reasoning Replay Expectations](#132-openai-reasoning-replay-expectations)
+    * [13.3 OpenAI Stream Part Tracking](#133-openai-stream-part-tracking)
+    * [13.4 Gemini Message Normalization](#134-gemini-message-normalization)
+    * [13.5 Gemini Thought Replay Expectations](#135-gemini-thought-replay-expectations)
+    * [13.6 Gemini Stream Part Tracking](#136-gemini-stream-part-tracking)
 
 **Part 5: Observability & Best Practices**
 
@@ -140,9 +143,16 @@ The LiteRun architecture is built upon five foundational pillars. Understanding 
 
 The `Agent` is your user-facing orchestrator. It acts as the supervisor for the entire execution lifecycle. It is responsible for holding the configuration (such as the system prompt and the list of available tools) and managing the "while-loop" that drives multi-turn interactions. It exposes the primary execution methods for synchronous, asynchronous, and streaming workflows.
 
-### 2.2 The LLM Provider Client (`ChatOpenAI`)
+### 2.2 The LLM Provider Clients (`ChatOpenAI`, `ChatGemini`)
 
-The provider client serves as the translation layer between LiteRun's normalized engine and the external world. Rather than hardcoding OpenAI logic into the Agent, the Agent delegates network calls to `ChatOpenAI`. This client is responsible for taking your conversation history, serializing it into the exact JSON schema required by the OpenAI Responses API, managing retries, and returning normalized response adapters.
+The provider client serves as the translation layer between LiteRun's normalized engine and the external world. Rather than hardcoding provider logic into the Agent, the Agent delegates network calls to a concrete provider client such as `ChatOpenAI` or `ChatGemini`.
+
+Each provider client is responsible for taking your conversation history, serializing it into the exact schema required by its upstream API, applying provider-specific request options, and returning the corresponding response and stream adapters. In practical terms:
+
+* `ChatOpenAI` targets the OpenAI Responses API.
+* `ChatGemini` targets the Google Gemini Interactions API.
+
+This separation is not cosmetic. It is the reason LiteRun can keep the orchestration loop (`Agent` + `Runner`) stable while allowing each provider to differ in message shape, reasoning replay rules, stream event structure, and token reporting semantics.
 
 ### 2.3 The `Tool`
 
@@ -170,16 +180,35 @@ Let's put the core concepts into practice. These minimal examples demonstrate ho
 
 ### 3.1 Installation and Environment Setup
 
-LiteRun is distributed as a standard Python package. Install it via `pip`.
+LiteRun is distributed as a standard Python package. Because providers are installed as extras, you should install the package variant that matches the provider you intend to use.
+
+
+For OpenAI:
 
 ```bash
-pip install literun
+pip install "literun[openai]"
 ```
 
-Because LiteRun acts as a client to external APIs, you must provide authentication credentials. The most secure and frictionless way to do this is by setting an environment variable in your terminal or loading it via a `.env` file. LiteRun will automatically detect this variable upon initialization.
+For Gemini:
+
+```bash
+pip install "literun[gemini]"
+```
+
+To install both supported providers:
+
+```bash
+pip install "literun[all]"
+```
+
+Because LiteRun acts as a client to external APIs, you must provide authentication credentials. The most secure and frictionless way to do this is by setting an environment variable in your terminal or loading it via a `.env` file. LiteRun will automatically detect the correct variable for the provider you instantiate.
 
 ```bash
 export OPENAI_API_KEY="sk-proj-your-api-key-here"
+```
+
+```bash
+export GOOGLE_API_KEY="your-google-api-key-here"
 ```
 
 ### 3.2 Minimal Non-Stream Run
@@ -190,10 +219,11 @@ This is the standard approach for backend API endpoints, batch processing script
 
 ```python
 from literun import Agent, ChatOpenAI
+# from literun.providers import ChatGemini
 
 # 1. Initialize the Provider Client and the Agent
 agent = Agent(
-    # We instantiate ChatOpenAI targeting a specific model.
+    # Swap ChatOpenAI with ChatGemini if you want to target Gemini instead.
     llm=ChatOpenAI(model="gpt-5-nano"),
     
     # The system instruction defines the fundamental persona and rules.
@@ -218,7 +248,7 @@ print(f"Execution Time: {result.timing.duration:.2f} seconds")
 ```
 
 **What happens under the hood?**
-When you call `agent.run()`, the Agent delegates the string to `ChatOpenAI.normalize_messages()`. The client translates the system instruction and user prompt into an OpenAI Responses payload. The framework then enters a `while` loop, fires the network request, receives the response, parses the textual output, calculates the tokens used, packs it all into a `RunResult` dataclass, and exits the loop.
+When you call `agent.run()`, the Agent delegates the string to the active provider client's `normalize_messages()` method. The client translates the system instruction and user prompt into the provider-native payload. The framework then enters a `while` loop, fires the network request, receives the response, parses the textual output, calculates the tokens used, packs it all into a `RunResult` dataclass, and exits the loop.
 
 ### 3.3 Minimal Stream Run
 
@@ -226,6 +256,7 @@ For user-facing applications (like chat interfaces or real-time dashboards), wai
 
 ```python
 from literun import Agent, ChatOpenAI
+# from literun.providers import ChatGemini
 
 # Initialize the Agent
 agent = Agent(llm=ChatOpenAI(model="gpt-5-nano"))
@@ -248,7 +279,7 @@ print("\n[Stream Complete]")
 ```
 
 **What happens under the hood?**
-When you call `agent.stream()`, the underlying `ChatOpenAI` client opens an HTTP connection with `stream=True`. The OpenAI API begins firing raw Server-Sent Events (SSE). The `OpenAIStreamAdapter` catches these chunks, identifies if they belong to text generation, tool argument assembly, or reasoning summaries, translates them into LiteRun's standard `StreamEvent` classes, and yields them sequentially to your `for` loop.
+When you call `agent.stream()`, the active provider client opens a streaming request. The upstream API begins firing raw streaming chunks, and the provider-specific stream adapter catches them, identifies whether they belong to text generation, tool argument assembly, or reasoning/thought output, translates them into LiteRun's standard `StreamEvent` classes, and yields them sequentially to your `for` loop.
 
 ### 3.4 Full Executable Examples
 
@@ -259,27 +290,27 @@ While the snippets above demonstrate the core mechanics, we provide complete, ru
   * [examples/async_agent.py](https://github.com/kaustubh-tr/literun/blob/main/examples/async_agent.py): An asynchronous agent implementation (`arun` / `astream`), ideal for high-concurrency environments like FastAPI.
 
 * **Raw LLM Client Usage (Stateless):**
-  * [examples/run_llm.py](https://github.com/kaustubh-tr/literun/blob/main/examples/run_llm.py): How to use `ChatOpenAI` synchronously without the `Agent` supervisor.
-  * [async_llm.py](https://github.com/kaustubh-tr/literun/blob/main/examples/async_llm.py): How to use the `ChatOpenAI` client asynchronously.
+  * [examples/run_llm.py](https://github.com/kaustubh-tr/literun/blob/main/examples/run_llm.py): How to use a provider client synchronously without the `Agent` supervisor. The file includes OpenAI and Gemini toggle comments.
+  * [examples/async_llm.py](https://github.com/kaustubh-tr/literun/blob/main/examples/async_llm.py): How to use the provider client asynchronously, again with OpenAI and Gemini toggle comments.
 
 ---
 
 # Part 2: The Core Public API
 
-This section details the primary interfaces you will use to construct and execute workflows in LiteRun. By understanding the parameters and methods of the `Agent` and the `ChatOpenAI` client, you gain fine-grained control over how the framework orchestrates multi-turn loops and interacts with the provider's network.
+This section details the primary interfaces you will use to construct and execute workflows in LiteRun. By understanding the parameters and methods of the `Agent` and the provider clients (`ChatOpenAI` and `ChatGemini`), you gain fine-grained control over how the framework orchestrates multi-turn loops and interacts with the provider's network.
 
 ---
 
 ## 4. Public API: `Agent`
 
-The `Agent` is the central orchestration unit in LiteRun. While the provider client (`ChatOpenAI`) handles the mechanics of HTTP requests and JSON formatting, the `Agent` is responsible for state management, tool routing, and loop safety. It binds your LLM configuration and your tool registry into a single, executable entity.
+The `Agent` is the central orchestration unit in LiteRun. While the provider client (`ChatOpenAI` or `ChatGemini`) handles the mechanics of HTTP requests and JSON formatting, the `Agent` is responsible for state management, tool routing, and loop safety. It binds your LLM configuration and your tool registry into a single, executable entity.
 
 ### 4.1 Constructor Parameters
 
 When you instantiate an `Agent`, you define its persistent identity, its rules of engagement, and its safety boundaries. The constructor accepts the following parameters:
 
 * **`llm`** (`BaseLLM`) – **Required**
-  * **Description**: The provider client instance that the agent will use to generate responses. In the current scope of this documentation, this will always be an instance of `ChatOpenAI`.
+  * **Description**: The provider client instance that the agent will use to generate responses. In the current supported scope, this will typically be `ChatOpenAI` or `ChatGemini`.
   * **Design Note**: By requiring an interface (`BaseLLM`) rather than a hardcoded OpenAI client, the `Agent` adheres to the Dependency Inversion Principle, remaining completely isolated from the provider's specific network logic.
 
 * **`name`** (`str | None`, default: `None`)
@@ -347,7 +378,7 @@ All four execution methods accept a `messages` parameter, which represents the u
 
 1. **`str`**: For simple, one-off queries. LiteRun wraps it in a standard user message.
 2. **`PromptTemplate`**: LiteRun's strongly typed, canonical message builder. This is the safest and most structured way to pass complex, multi-turn history.
-3. **`list[dict]`**: Raw, provider-native dictionary lists. This acts as an escape hatch for advanced users who want to construct exact OpenAI JSON payloads manually.
+3. **`list[dict]`**: Raw, provider-native dictionary lists. This acts as an escape hatch for advanced users who want to construct exact provider payloads manually.
 
 *(Note: These input modes are explored exhaustively in Part 3 of this documentation).*
 
@@ -361,55 +392,84 @@ By passing a dictionary to `runtime_context`, LiteRun makes that data available 
 
 ---
 
-## 5. Public API: `ChatOpenAI`
+## 5. Public API: Provider Clients
 
-The `ChatOpenAI` class is the provider client. It translates LiteRun's agnostic commands into the highly specific, proprietary JSON schemas demanded by the **OpenAI Responses API**.
+LiteRun currently exposes two provider clients at the public API layer:
 
-Because provider APIs mutate rapidly, the `ChatOpenAI` client is strictly typed using Pydantic, ensuring that invalid parameters are caught immediately upon instantiation, rather than failing silently during a network request.
+* `ChatOpenAI`, which targets the OpenAI Responses API.
+* `ChatGemini`, which targets the Google Gemini Interactions API.
+
+Both classes share the same top-level role in LiteRun's architecture: they translate LiteRun's agnostic orchestration requests into provider-native JSON payloads, initialize the official SDK clients, normalize supported input types, and return the provider-specific response and stream adapters.
+
+Because provider APIs mutate rapidly, both provider clients are strictly typed using Pydantic. This means invalid configuration is usually caught at initialization time, rather than surfacing later as confusing runtime failures buried inside a network request.
 
 ### 5.1 Standard Configuration Parameters
 
 These parameters manage the basic HTTP connection, authentication, and core model settings.
 
-* **`model`** (`str`, default: `"gpt-5-nano"`)
-  * **Description**: The specific OpenAI model identifier you wish to invoke.
+The clearest way to understand this surface is to divide it into two groups:
+
+* **Common LiteRun client parameters**: fields that exist on both `ChatOpenAI` and `ChatGemini`.
+* **Provider-specific parameters**: fields that only make sense for one upstream API.
+
+**Common Parameters**
+
+* **`model`** (`str`)
+  * **Description**: The provider model identifier you wish to invoke.
+  * **Examples**:
+    * OpenAI: `gpt-5-nano`
+    * Gemini: `gemini-3-flash-preview`
 
 * **`api_key`** (`str | None`)
-  * **Description**: Your OpenAI secret API key.
-  * **Usage**: If you leave this as `None`, the client will securely attempt to read the `OPENAI_API_KEY` environment variable.
+  * **Description**: Your provider secret API key.
+  * **Usage**:
+    * `ChatOpenAI` reads `OPENAI_API_KEY` if omitted.
+    * `ChatGemini` reads `GOOGLE_API_KEY` if omitted.
 
-* **`organization`** / **`project`** (`str | None`)
-  * **Description**: Optional string identifiers. If your OpenAI account utilizes multiple projects or organizations, setting these ensures that billing and rate limits are routed to the correct administrative bucket.
+* **`temperature`** (`float | None`)
+  * **Description**: Controls the randomness of the model's output. A value of `0.0` yields highly deterministic, analytical responses, while higher values encourage more varied phrasing.  
+  *(Note: Reasoning models (like OpenAI `o-series` and `gpt-5-series`) generally ignore or strictly limit temperature settings. Please check the provider documentation for supported options.)*
+
+* **`max_output_tokens`** (`int | None`)
+  * **Description**: A hard cap on the number of tokens the model is permitted to generate in its response. This is one of the simplest and most effective cost-control levers in production.
+
+* **`timeout`** (`float | None`, default: `60.0`)
+  * **Description**: The maximum number of seconds the client will wait for a network response. If the provider hangs, the client terminates the request and raises `APIConnectionError`.
+
+* **`max_retries`** (`int`, default: `3`)
+  * **Description**: The number of times the underlying SDK should automatically retry transient request failures.
+
+* **`model_kwargs`** (`dict[str, Any]`)
+  * **Description**: The escape hatch for provider parameters that LiteRun does not yet model explicitly. Entries in this dictionary are merged directly into the final provider request payload.
+
+**OpenAI-Specific Standard Parameters**
+
+* **`organization`** (`str | None`)
+  * **Description**: Optional OpenAI organization identifier.
+
+* **`project`** (`str | None`)
+  * **Description**: Optional OpenAI project identifier.
 
 * **`base_url`** (`str | None`)
   * **Description**: Overrides the default OpenAI API endpoint.
-  * **Usage**: Essential if you are routing traffic through an enterprise API gateway, a proxy for logging/caching, or an OpenAI-compatible local model server like vLLM.
+  * **Usage**: Useful for OpenAI-compatible gateways, enterprise proxies, or alternative backends that implement the OpenAI protocol.
 
-* **`temperature`** (`float | None`)
-  * **Description**: Controls the randomness of the model's output. A value of `0.0` yields highly deterministic, analytical responses, while values approaching `1.0` or higher encourage creative, varied phrasing.  
-  *(Note: Reasoning models (like `o-series` or `gpt-5-series`) generally ignore or strictly limit temperature settings).*
+**Gemini-Specific Standard Parameters**
 
-* **`max_output_tokens`** (`int | None`)
-  * **Description**: A hard cap on the number of tokens the model is permitted to generate in its response, including reasoning tokens. Useful for preventing runaway generation costs.
-
-* **`timeout`** (`float | None`, default: `60.0`)
-  * **Description**: The maximum number of seconds the client will wait for a network response. If the provider hangs, the client will terminate the request and raise a `LiteAPIConnectionError`.
-
-* **`max_retries`** (`int`, default: `3`)
-  * **Description**: The number of times the underlying SDK should automatically retry a request if it encounters transient network issues or a retryable `429 Rate Limit` status code.
-
-* **`model_kwargs`** (`dict[str, Any]`)
-  * **Description**: The ultimate escape hatch. Any key-value pairs placed in this dictionary are merged directly into the final API payload sent to OpenAI. If OpenAI releases a new parameter tomorrow, you can pass it here immediately without waiting for a LiteRun version update.
+* **`project`** (`str | None`)
+  * **Description**: Optional Google Cloud project identifier passed to the Gemini SDK client.
 
 ### 5.2 Advanced Responses API Parameters
 
-The OpenAI Responses API introduces several new control mechanisms for reasoning models and structured data. `ChatOpenAI` exposes these natively:
+OpenAI and Gemini do not expose identical advanced controls. LiteRun reflects that reality instead of pretending the knobs are fully uniform. Some parameters below are OpenAI-specific, some are Gemini-specific, and some exist conceptually on both providers but are mapped differently under the hood.
+
+**OpenAI-Specific Advanced Parameters**
 
 * **`reasoning_effort`** (`Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None`)
-  * **Description**: Directs compatible reasoning models (e.g., `o3-mini`) on how much computational time and budget to allocate to internal "thinking" before outputting text. Higher effort yields better answers but costs more reasoning tokens and increases latency.
+  * **Description**: Directs compatible reasoning models (e.g., `o-series` and `gpt-5-series`) on how much computational time and budget to allocate to internal "thinking" before outputting text. Higher effort yields better answers but costs more reasoning tokens and increases latency.
 
 * **`reasoning_summary`** (`Literal["auto", "concise", "detailed"] | None`)
-  * **Description**: Instructs the API on how verbose the visible "thought process" block should be in the final response trace.
+  * **Description**: Instructs the API on how verbose the visible "reasoning process" block should be in the final response trace.
 
 * **`verbosity`** (`Literal["low", "medium", "high"] | None`)
   * **Description**: A general directive to the model regarding how exhaustive its textual response should be, independent of the system prompt.
@@ -423,8 +483,26 @@ The OpenAI Responses API introduces several new control mechanisms for reasoning
 * **`response_format`** (`object | None`)
   * **Description**: Used in conjunction with `text_format="json_schema"`. You pass the strict JSON schema (or a Pydantic model's schema dump) here to force the model to output a specific data shape.
 
+**Gemini-Specific Advanced Parameters**
+
+* **`reasoning_effort`** (`Literal["minimal", "low", "medium", "high"] | None`)
+  * **Description**: Gemini's thinking level control. It serves the same high-level purpose as OpenAI's reasoning effort but is mapped into Gemini's generation config rather than the OpenAI Responses reasoning payload.
+
+* **`reasoning_summary` on `ChatGemini`** (`Literal["auto", "none"] | None`)
+  * **Description**: Gemini's thought summary visibility setting.
+
+* **`response_mime_type`** (`str | None`)
+  * **Description**: Gemini-specific response content MIME type. This is commonly used when steering Gemini toward structured output formats such as JSON.
+
+**Shared Concept, Provider-Specific Values**
+
+* **`tool_choice`**
+  * **Description**: Tool policy exists on both providers, but the accepted values are not identical.
+  * **OpenAI values**: `"auto"`, `"any"`, `"none"`, `"required"`.
+  * **Gemini values**: `"auto"`, `"any"`, `"none"`, `"validated"`.
+
 * **`store`** (`bool`, default: `False`)
-  * **Description**: When set to `True`, instructs OpenAI to store the inputs and outputs of this request on their servers. This is used for platform features like persistent memory or training data collection.
+  * **Description**: Provider request storage flag. LiteRun passes it through when supported by the upstream API.
 
 ### 5.3 Internal Method Lifecycle
 
@@ -433,14 +511,14 @@ While you rarely need to call these methods directly (as the `Agent` handles the
 * **`normalize_messages()`**: Accepts `str`, `list`, or `PromptTemplate` and normalizes by input type:
   * `str` -> a simple user message payload,
   * `list` -> shallow copy pass-through for provider-native payloads,
-  * `PromptTemplate` -> serialized OpenAI Responses block structure.
+  * `PromptTemplate` -> serialized provider-specific block structure.
 
-* **`generate()` / `agenerate()`**: Merges the normalized messages, tools, and configuration parameters into a final dictionary, fires the network request via the official `openai` Python SDK, and catches any native exceptions to remap them to LiteRun errors.
+* **`generate()` / `agenerate()`**: Merges the normalized messages, tools, and configuration parameters into a final dictionary, fires the network request via the official provider SDK, and catches any native exceptions to remap them to LiteRun errors.
 
-* **`get_response_adapter()` / `get_stream_adapter()`**: Returns the `OpenAIResponseAdapter` or `OpenAIStreamAdapter`. These isolated classes are responsible for taking the messy, raw OpenAI response objects or streaming SSE chunks and extracting the normalized text, tool calls, and token usage for the `Agent` to process.
+* **`get_response_adapter()` / `get_stream_adapter()`**: Returns the provider-specific adapter pair. These isolated classes are responsible for taking the messy, raw provider response objects or streaming chunks and extracting the normalized text, tool calls, and token usage for the `Agent` to process.
 
 > **Want to bypass the Agent and use the LLM client directly?**  
-> If you only need LiteRun's strict Pydantic normalization and token accounting without the multi-turn tool loop, you can instantiate and call `ChatOpenAI` directly. 
+> If you only need LiteRun's strict Pydantic normalization and token accounting without the multi-turn tool loop, you can instantiate and call `ChatOpenAI` or `ChatGemini` directly. 
 > * For synchronous usage, *see: [examples/run_llm.py](https://github.com/kaustubh-tr/literun/blob/main/examples/run_llm.py)*
 > * For asynchronous usage, *see: [examples/async_llm.py](https://github.com/kaustubh-tr/literun/blob/main/examples/async_llm.py)*
 
@@ -714,11 +792,11 @@ result = agent.run("Please summarize the following text: ...")
 
 ### Mode B: The `list[dict]` Input (Absolute Control)
 
-This mode acts as LiteRun's "escape hatch." If you pass a list of dictionaries, LiteRun assumes you are an expert user passing provider-native payloads. The framework applies minimal transformation, passing your dictionaries almost directly to the underlying OpenAI API.
+This mode acts as LiteRun's "escape hatch." If you pass a list of dictionaries, LiteRun assumes you are an expert user passing provider-native payloads. The framework applies minimal transformation, passing your dictionaries almost directly to the active provider client.
 
-**When to use it:** Use this when you have existing legacy code that already formats OpenAI payloads, or when OpenAI releases a brand-new message property that LiteRun's `PromptTemplate` does not yet natively support.
+**When to use it:** Use this when you have existing legacy code that already formats provider payloads, or when a provider releases a brand-new message property that LiteRun's `PromptTemplate` does not yet natively support.
 
-**Warning:** This mode is powerful but dangerous. You bypass LiteRun's validation invariants. If you format the dictionary incorrectly, the OpenAI API will reject the request with a `400 Bad Request` error.
+**Warning:** This mode is powerful but dangerous. You bypass LiteRun's validation invariants. If you format the dictionary incorrectly, the active provider API will reject the request with a request validation error.
 
 *Example 1: Simple Provider-Native List*
 
@@ -746,7 +824,24 @@ messages = [
 result = agent.run(messages)
 ```
 
-*Example 3: Manual Tool Continuation Payload (Advanced)*
+*Example 3: Explicit Gemini Interactions Content Blocks*
+Gemini uses a different native schema, especially around assistant/model turns and function calls:
+
+```python
+messages = [
+    {
+        "role": "user",
+        "content": [{"type": "text", "text": "Say hello."}],
+    },
+    {
+        "role": "model",
+        "content": [{"type": "text", "text": "Hello."}],
+    },
+]
+result = agent.run(messages)
+```
+
+*Example 4: Manual Tool Continuation Payload (Advanced)*
 If you are restoring a conversation from a database where a tool was previously called and resolved, you must pass the exact provider-native sequence of events.
 
 ```python
@@ -851,7 +946,7 @@ Every `RunItem` subclass contains these foundational fields:
 * **`id`** (`str | None`): The unique ID assigned to this item by the provider, if available.
 * **`role`** (`str | None`): The semantic role (`assistant`, `tool_call`, `tool_output`).
 * **`raw_item`** (`Any | None`): The original, unaltered object returned by the underlying SDK (e.g., the raw `openai.types.chat.ChatCompletionMessageToolCall`).
-* *Practical Usage*: This is your ultimate debug tool. If LiteRun's normalization drops an obscure, brand-new metadata field that OpenAI just released, you can always recover it from `raw_item`.
+* *Practical Usage*: This is your ultimate debug tool. If LiteRun's normalization drops an obscure, brand-new metadata field that a provider just released, you can always recover it from `raw_item`.
 
 * **`token_usage`** (`TokenUsage | None`): Token usage attributable to this specific step, if the provider isolates it.
 
@@ -1024,13 +1119,18 @@ LiteRun’s `TokenUsage` dataclass acts as a strict accounting ledger, enforcing
 * **`tool_use_tokens`**: Overhead tokens consumed by the provider to format and understand tool schemas.
 * **`total_tokens`**: Provider-reported total when available; otherwise a runtime-resolved aggregate used by LiteRun.
 
-### 12.2 The OpenAI Mapping Rationale (Unblending)
+### 12.2 Provider Token Mapping Rationale
 
-OpenAI's native API reports token totals as blended figures.
+Token reporting differs materially between providers, and LiteRun intentionally normalizes only where it has enough information to do so safely.
+
+OpenAI's native API reports some token totals as blended figures.
 For example, a raw OpenAI response might look like this:
 
 * `usage.input_tokens`: 500
 * `usage.input_tokens_details.cached_tokens`: 400
+* `usage.output_tokens`: 90
+* `usage.output_tokens_details.reasoning_tokens`: 30
+* `usage.total_tokens`: 590
 
 If you simply read `input_tokens`, you miss the nuance. LiteRun **deliberately separates these buckets** to prevent hidden costs.
 
@@ -1038,8 +1138,39 @@ When LiteRun processes the above example, it populates the `TokenUsage` object l
 
 * `input_tokens`: 100 *(LiteRun subtracted the cached tokens to give you the true standard input)*
 * `cached_read_tokens`: 400
+* `output_tokens`: 60 *(LiteRun subtracted reasoning tokens from total output to isolate visible/model output tokens)*
+* `reasoning_tokens`: 30
+* `total_tokens`: 590
 
 This deliberate unblending means your downstream analytics and billing dashboards can simply multiply each LiteRun field by its respective pricing tier without fear of double-counting.
+
+Gemini also exposes separable usage buckets, but its semantics are not identical to OpenAI's. In particular, Gemini reports dedicated totals such as cached tokens, thought tokens, and tool-use tokens through the Interactions usage object. LiteRun maps those into the normalized `TokenUsage` fields while preserving the provider-reported `total_tokens`.
+
+For example, a raw Gemini usage object might conceptually look like this:
+
+* `usage.total_input_tokens`: 120
+* `usage.total_cached_tokens`: 25
+* `usage.total_output_tokens`: 40
+* `usage.total_thought_tokens`: 30
+* `usage.total_tool_use_tokens`: 10
+* `usage.total_tokens`: 200
+
+LiteRun maps that into:
+
+* `input_tokens`: 95 *(LiteRun subtracts cached tokens from total input to isolate standard input)*
+* `cached_read_tokens`: 25
+* `output_tokens`: 40
+* `reasoning_tokens`: 30
+* `tool_use_tokens`: 10
+* `total_tokens`: 200
+
+The key idea is the same as OpenAI: the normalized buckets should be independently useful for cost analysis and observability, while `total_tokens` remains the provider-reported aggregate when the provider supplies one.
+
+The important rule is this:
+
+* LiteRun uses the provider's `total_tokens` directly when the provider supplies one.
+* LiteRun decomposes provider-specific sub-buckets into the normalized fields where the upstream schema makes that possible.
+* If a provider does not supply a total, LiteRun falls back to additive computation from the normalized buckets.
 
 ### 12.3 The Timing Schema
 
@@ -1052,11 +1183,11 @@ Included in both `RunResult` and `RunStreamEvent` is the `Timing` object.
 
 ---
 
-## 13. OpenAI-Specific Behavior and Mapping
+## 13. Provider-Specific Behavior and Mapping
 
-While the `Agent` keeps your application abstracted from the provider, it is vital for senior engineers to understand exactly how the `ChatOpenAI` client translates your canonical data into the specific expectations of the OpenAI Responses API.
+While the `Agent` keeps your application abstracted from the provider, it is still important to understand where the provider adapters differ. OpenAI and Gemini do not share identical request shapes, reasoning replay rules, or stream event semantics. LiteRun standardizes the outer contract, but the inner mapping rules still matter when you use provider-native payloads or debug low-level behavior.
 
-### 13.1 Message Normalization
+### 13.1 OpenAI Message Normalization
 
 When you call `agent.run(prompt_template)`, the `ChatOpenAI.normalize_messages()` method unpacks the `PromptTemplate` and transforms it.
 
@@ -1069,7 +1200,7 @@ OpenAI's latest schema requires highly nested content blocks. LiteRun maps them 
 
 If LiteRun encounters a block that the OpenAI adapter does not support, it will raise an `AgentSerializationError` rather than silently dropping the data.
 
-### 13.2 Reasoning Replay Expectations
+### 13.2 OpenAI Reasoning Replay Expectations
 
 If you are using an `o-series` or `gpt-5-series` model, the model may output a `ReasoningBlock`. If you want to continue the conversation, you must "replay" this thought process back to the model in the next turn to maintain context.
 
@@ -1081,14 +1212,56 @@ To successfully serialize a `ReasoningBlock` back to OpenAI, LiteRun requires:
 
 If `reasoning_id` or `summary` is missing, serialization fails with `AgentSerializationError`.
 
-### 13.3 Stream Tool-Call Correlation
+### 13.3 OpenAI Stream Part Tracking
 
-One of the most complex engineering feats inside the `OpenAIStreamAdapter` is tool-call correlation.
+One of the most complex engineering feats inside the `OpenAIStreamAdapter` is stream part tracking, with tool-call correlation being the most important sub-problem.
 
 When OpenAI streams a tool call, it often separates the metadata (the tool name and ID) from the argument deltas (the JSON string). It emits a `response.output_item.added` event to define the ID, followed by dozens of `response.function_call_arguments.delta` events.
 
 LiteRun maintains a highly optimized **internal registry dictionary** tracked by `item_id`.
 As fragments arrive over the network, LiteRun buffers the JSON string in memory, tied strictly to that `item_id`. It only attempts to parse the JSON and emit a `tool.call.done` event when OpenAI explicitly transmits the `response.function_call_arguments.done` signal. This prevents the framework from attempting to parse malformed, half-streamed JSON, guaranteeing absolute stability in your tool execution loop.
+
+OpenAI is comparatively explicit in its event naming, so LiteRun does not need the same kind of index-based part-kind bookkeeping that Gemini requires. But the conceptual goal is the same in both adapters: keep enough state to know what kind of output is in progress, when it is complete, and whether the current turn should terminate the stream or continue into another tool loop turn.
+
+### 13.4 Gemini Message Normalization
+
+Gemini's Interactions API uses a turn structure that differs meaningfully from OpenAI's Responses input items.
+
+LiteRun maps canonical messages into Gemini turns as follows:
+
+* Assistant turns are serialized with `role="model"`.
+* Canonical `TextBlock` becomes Gemini `{"type": "text", "text": ...}` content.
+* Canonical `ToolCallBlock` becomes Gemini `{"type": "function_call", "id": ..., "name": ..., "arguments": ...}`.
+* Canonical `ToolOutputBlock` becomes Gemini `{"type": "function_result", "call_id": ..., "name": ..., "result": ...}`.
+* Canonical `ReasoningBlock` becomes Gemini `{"type": "thought", ...}`.
+
+Unlike OpenAI, Gemini does not accept `system` turns inside the normal message stream when using `PromptTemplate` serialization. In LiteRun, Gemini system instruction is passed separately through the top-level request field. If you attempt to serialize a canonical `system` message through `ChatGemini`, LiteRun raises `AgentSerializationError` immediately instead of sending an invalid payload upstream.
+
+### 13.5 Gemini Thought Replay Expectations
+
+Gemini's thought replay requirements are stricter than OpenAI's in one important way: the replayed thought must include the provider-issued thought signature.
+
+In LiteRun terms, this means:
+
+* A Gemini `ReasoningBlock` replay requires `signature`.
+* `summary` may be present and is included when available.
+* If the signature is missing, LiteRun raises `AgentSerializationError` rather than emitting a malformed thought replay block.
+
+This behavior is intentional. Gemini thought replay is not something LiteRun can safely "best effort" reconstruct. If the provider requires a signature, the framework must fail early rather than allow silent conversation corruption.
+
+### 13.6 Gemini Stream Part Tracking
+
+Gemini's streaming format is structurally different from OpenAI's.
+
+OpenAI identifies many streamed event types directly through explicit event names such as `response.output_text.done` or `response.function_call_arguments.delta`. Gemini instead emits a series of `content.start`, `content.delta`, and `content.stop` events indexed by content position. Because the `content.stop` event does not independently repeat the content kind, LiteRun's Gemini stream adapter tracks part-kind state by index while the stream is in progress.
+
+That internal tracking is what allows LiteRun to answer questions like:
+
+* Was this `content.stop` closing a text part or a function call?
+* Should this turn produce `stream.end` or only `other.event` because a tool call occurred?
+* Should a thought/signature block be replayed into the next turn if the model used tools?
+
+This is one of the clearest examples of LiteRun's design philosophy: the normalized external contract stays stable, while the provider-specific complexity is isolated inside the adapter where it belongs.
 
 ---
 
@@ -1102,7 +1275,7 @@ When deploying agentic workflows to production, the framework's ability to grace
 
 Agentic loops involve constant network traversal, dynamic schema generation, and unpredictable model outputs. Failures are inevitable. If a framework throws generic `Exception` or `KeyError` messages, debugging becomes a nightmare.
 
-LiteRun maps all internal and provider SDK exceptions to a unified, predictable hierarchy rooted in `LiteRunError`. This allows you to write defensive application code that can catch, triage, and potentially retry specific failure categories without having to import `openai.OpenAIError`.
+LiteRun maps all internal and provider SDK exceptions to a unified, predictable hierarchy rooted in `LiteRunError`. This allows you to write defensive application code that can catch, triage, and potentially retry specific failure categories without having to import provider-native exception classes directly.
 
 ### 14.1 Agent-Level Errors
 
@@ -1275,13 +1448,11 @@ Mastering LiteRun requires understanding the architectural boundaries of the fra
 
 ## 17. Future Work
 
-LiteRun’s architecture is fundamentally provider-agnostic. While this branch of the documentation strictly governs the OpenAI Responses API implementation, the underlying `BaseLLM` and `BaseAdapter` contracts are already capable of housing other major providers.
+LiteRun’s architecture is fundamentally provider-agnostic. This document now covers the currently implemented OpenAI and Gemini providers, while leaving Anthropic and later expansion work for subsequent revisions.
 
 Planned expansions for subsequent major releases include:
 
-* **Gemini Provider Support**: Full documentation for the Google GenAI `Interactions API`, including native support for Gemini 2.0 thought blocks, search grounding tools, and multimodal input schemas.
 * **Anthropic Provider Support**: Full documentation for the Anthropic `Messages API`, detailing cumulative cache-read stream logic, extended thinking budgets, and Claude's specific `tool_use` block invariants.
-* **The Multi-Provider Migration Guide**: Cookbook patterns for seamlessly hot-swapping `ChatOpenAI` for `ChatAnthropic` in production environments using identical canonical `PromptTemplates` and Pydantic `Tool` registries.
 
 ---
 

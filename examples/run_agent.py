@@ -5,7 +5,9 @@ from pathlib import Path
 # Make local package importable when running this file directly.
 sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-from literun import Agent, ChatOpenAI, PromptTemplate, Tool, ToolRuntime
+from literun import Agent, PromptTemplate, Tool, ToolRuntime
+from literun.providers import ChatOpenAI
+# from literun.providers import ChatGemini  # uncomment for Gemini models
 
 
 def get_weather(location: str, units: str = "celsius") -> str:
@@ -26,11 +28,20 @@ def search_database(query: str, limit: int, runtime: ToolRuntime) -> str:
 
 
 def main() -> None:
+    # Toggle provider by commenting/uncommenting one of the blocks below.
+
+    # --- OpenAI provider ---
     if not os.getenv("OPENAI_API_KEY"):
         print("Please set OPENAI_API_KEY.")
         return
+    llm = ChatOpenAI(model="gpt-5-nano")
 
-    llm = ChatOpenAI(model="gpt-5-nano")  # reasoning models don't support temperature.
+    # --- Gemini provider (uncomment below and comment out the OpenAI block above) ---
+    # if not os.getenv("GOOGLE_API_KEY"):
+    #     print("Please set GOOGLE_API_KEY.")
+    #     return
+    # llm = ChatGemini(model="gemini-3-flash-preview")
+
     weather_tool = Tool.from_callable(get_weather, name="get_weather")
     search_tool = Tool.from_callable(search_database, name="search_database")
 
@@ -65,12 +76,12 @@ def main() -> None:
         "request_id": "req-456",
     }
 
-    print("\n=== Agent Non-streaming ===")
+    print(f"\n=== Agent Non-streaming ({llm.provider}) ===")
     result = agent.run(prompt, runtime_context=runtime_context)
     print("Output:", result.output)
     print("\nUsage:", result.token_usage)
 
-    print("\n=== Agent Streaming ===")
+    print(f"\n=== Agent Streaming ({llm.provider}) ===")
     for event in agent.stream(prompt, runtime_context=runtime_context):
         if event.event.type == "message.output.delta" and isinstance(
             getattr(event.event, "delta", None), str
